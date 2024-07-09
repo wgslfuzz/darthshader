@@ -1,0 +1,16 @@
+[package]
+name = "naga-afl"
+version = "0.0.1"
+edition = "2021"
+description = "Naga shader translation fuzzer"
+keywords = ["shader", "SPIR-V", "GLSL", "MSL"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+afl = "*" 
+naga = { version = "0.19", features = ["compact", "wgsl-in", "spv-out", "msl-out", "hlsl-out", "serialize", "deserialize"] }
+log = "0.4"
+codespan-reporting = "0.11"
+env_logger = "0.11"
+argh = "0.1.5"
+libc = "0.2"

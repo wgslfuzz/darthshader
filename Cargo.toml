@@ -1,0 +1,51 @@
+cargo-features = ["profile-rustflags"]
+
+[package]
+name = "darthshader"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+
+[[bin]]
+name = "darthshader"
+path = "src/main.rs"
+
+[[bin]]
+name = "lifter"
+path = "src/lifter.rs"
+
+[dependencies]
+tree-sitter = "0.21"
+link-cplusplus = "1.0"
+naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
+libafl = { version = "0.11.2", features = ["default", "introspection"] }
+libafl_bolts = "0.11.2"
+clap = { version = "4", features = ["derive"] }
+nix = "0.26"
+serde = "1"
+ron = "0.8"
+ahash = "0.8"
+mimalloc = { version = "*", default-features = false }
+glob = "0.3"
+hashbrown = "0.*"
+rand = { version = "0.8", features = ["small_rng"] }
+tinyvec = { version = "1", features = ["serde"] }
+tinystr = { version = "0.7", features = ["serde"] }
+regex = "1"
+bitflags = "1"
+smallvec = "1"
+serde_yaml = "0.9"
+
+[build-dependencies]
+cc = "*"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+debug = true
+rustflags = ["-C", "force-frame-pointers=yes"]
+
+[profile.dev.package.naga]
+opt-level = 3
+overflow-checks = false

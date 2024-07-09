@@ -1,0 +1,53 @@
+diff --git a/instrumentation/SanitizerCoveragePCGUARD.so.cc b/instrumentation/SanitizerCoveragePCGUARD.so.cc
+index f88ce126..6a9cbb00 100644
+--- a/instrumentation/SanitizerCoveragePCGUARD.so.cc
++++ b/instrumentation/SanitizerCoveragePCGUARD.so.cc
+@@ -1005,23 +1005,7 @@ bool ModuleSanitizerCoverageAFL::InjectCoverage(
+                                 llvm::AtomicOrdering::Monotonic);
+ 
+           } else {
+-
+-            LoadInst *Counter = IRB.CreateLoad(IRB.getInt8Ty(), MapPtrIdx);
+-            ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
+-
+-            /* Update bitmap */
+-
+-            Value *Incr = IRB.CreateAdd(Counter, One);
+-
+-            if (skip_nozero == NULL) {
+-
+-              auto cf = IRB.CreateICmpEQ(Incr, Zero);
+-              auto carry = IRB.CreateZExt(cf, Int8Ty);
+-              Incr = IRB.CreateAdd(Incr, carry);
+-
+-            }
+-
+-            StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
++            StoreInst *StoreCtx = IRB.CreateStore(One, MapPtrIdx);
+             ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
+ 
+           }
+@@ -1233,22 +1217,7 @@ void ModuleSanitizerCoverageAFL::InjectCoverageAtBlock(Function   &F,
+ 
+     } else {
+ 
+-      LoadInst *Counter = IRB.CreateLoad(IRB.getInt8Ty(), MapPtrIdx);
+-      ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(Counter);
+-
+-      /* Update bitmap */
+-
+-      Value *Incr = IRB.CreateAdd(Counter, One);
+-
+-      if (skip_nozero == NULL) {
+-
+-        auto cf = IRB.CreateICmpEQ(Incr, Zero);
+-        auto carry = IRB.CreateZExt(cf, Int8Ty);
+-        Incr = IRB.CreateAdd(Incr, carry);
+-
+-      }
+-
+-      StoreInst *StoreCtx = IRB.CreateStore(Incr, MapPtrIdx);
++      StoreInst *StoreCtx = IRB.CreateStore(One, MapPtrIdx);
+       ModuleSanitizerCoverageAFL::SetNoSanitizeMetadata(StoreCtx);
+ 
+     }
