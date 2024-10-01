@@ -34,6 +34,7 @@ use libafl::{
     feedback_and_fast, feedback_or,
     feedbacks::{ConstFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
+    inputs::Input,
     monitors::SimpleMonitor,
     mutators::{StdMOptMutator, Tokens},
     observers::{HitcountsMapObserver, StdMapObserver, TimeObserver},
@@ -401,6 +402,11 @@ fn fuzz(
         }
         seeds.sort_by(|a, b| b.cmp(a));
         let seeds: Vec<PathBuf> = seeds.into_iter().map(|(_, p)| p).collect();
+        // filter all paths which cannot be parsed successfully
+        let seeds: Vec<PathBuf> = seeds
+            .into_iter()
+            .filter_map(|p| LayeredInput::from_file(&p).is_ok().then_some(p))
+            .collect();
 
         state
             .load_initial_inputs_by_filenames(&mut fuzzer, &mut executor, &mut mgr, &seeds)
