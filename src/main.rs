@@ -1,5 +1,4 @@
 #![feature(variant_count)]
-#![feature(lazy_cell)]
 #![deny(
     clippy::correctness,
     clippy::cast_possible_wrap,

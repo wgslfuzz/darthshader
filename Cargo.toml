@@ -45,6 +45,10 @@ codegen-units = 1
 opt-level = 3
 debug = true
 rustflags = ["-C", "force-frame-pointers=yes"]
+panic = 'unwind'
+
+[profile.dev]
+panic = 'unwind'
 
 [profile.dev.package.naga]
 opt-level = 3

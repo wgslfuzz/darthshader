@@ -284,9 +284,12 @@ impl Input for LayeredInput {
                     .map_err(|_| Error::illegal_argument("cannot parse glsl"))?
             }
             "wgsl" => {
-                let res = naga::front::wgsl::parse_str(&input)
-                    .map_err(|e| Error::illegal_argument(e.to_string()));
-                let Ok(module) = res else {
+                let res = std::panic::catch_unwind(|| {
+                    naga::front::wgsl::parse_str(&input)
+                        .map_err(|e| Error::illegal_argument(e.to_string()))
+                });
+
+                let Ok(Ok(module)) = res else {
                     println!("Attempting to parse as AST: {:?}", path.as_ref());
                     let ast = match Ast::try_from_wgsl(input.as_bytes()) {
                         Ok(ast) => ast,
