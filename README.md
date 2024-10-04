@@ -32,6 +32,14 @@ The most important arguments are:
 - The `--output` folder contains two sub-directories. There is the `queue` file which contains all samples contributing new coverage. In addition, there is a `crashes` directory containing, as the name implies, all crashes found during the fuzzing campaign. Note that the samples are serialized in `.ron` files. Converting them to `.wgsl` files is possible using the lifter. This utility program is build alongside the fuzzer.
 - The `--input` folder will be traversed recursively for all shader files for importing them.
 
+## Crash and Queue Analysis
+The fuzzer will write crashes and samples increasing coverage to the `crashes/` and `queue/` folder, respectively. Those `.ron` files are a serialized version of the fuzzers internal representation, they're *not* wgsl files. When investigating crashes (or queue files), one needs to convert the internal representation to a wgsl file. To this end, the fuzzer ships a lifter, which converts the .ron files to .wgsl.
+Standalone reproduction of crashes follows a general pattern. First, the .ron file must be lifted to a .wgsl, as described just above. The next step depends on whether we're dealing with a front-end translator crash (e.g., tint, naga, or wgslc) or a backend compiler crash (e.g., dxcompiler). All front-end translator support standalone invocation. There are 2 things to keep in mind. First, specify the same command line parameters as the harness + use the same set of sanitizers. Otherwise, the crash might not reproduce. Second, depending on the front-end, an entrypoint must be specified. The fuzzing harness sequentially compiles each entrypoint. This behavior eases mutations, but can result in shaders with multiple entrypoints. Attempt to compile all of the entrypoints, at least one of them *should* provoke a crash.
+For backed compiler crashes, you first need to convert the wgsl file to the format supported by the backend compiler. As an example, a shader translated with tint and later compiled with dxc can be translated as follows: `./tint shader.wgsl -o shader.hlsl`. Next, the .hlsl shader can be compiled with dxc. Again, make sure to use the same sanitizer flags and runtime options. E.g., `./dxc-3.7 -T cs_6_2 -HV 2018 shader.hlsl`.
+
+### cs\_6\_2, ps\_6\_3, whaaaat?
+The backend translator dxc requires you to pass the type of shader you're translating as well as a shader version. The type of shader depends on the entrypoint. @compute/@vertex/@fragment correspond to cs_/vs_/ps_, respectively. The shader version should be between 6.2 and 6.6. The fuzzer defaults to 6.6. As an example, a vertex shader of version 6.6 results in `-T vs_6_6`.
+
 ## Further Components
 
 ### ****Seeds****
