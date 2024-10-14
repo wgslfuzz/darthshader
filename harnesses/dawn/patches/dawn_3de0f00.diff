@@ -574,6 +574,8 @@ index 0000000000..c9c85d6d95
 +
 +            arguments.push_back(L"-E");
 +            arguments.push_back(entryPointW.data());
++            arguments.push_back(L"-opt-disable");
++            arguments.push_back(L"structurize-loop-exits-for-unroll");
 +            arguments.push_back(L"/Gis");
 +            arguments.push_back(L"/Zpr");
 +            arguments.push_back(L"/enable-16bit-types");
