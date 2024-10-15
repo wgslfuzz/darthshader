@@ -300,8 +300,12 @@ impl Input for LayeredInput {
                 module
             }
             _ => {
-                println!("Offending file: {:?}", path.as_ref());
-                panic!("file import error");
+                let mut opts = ron::Options::default();
+                opts.recursion_limit = None;
+                let l: Self = opts
+                    .from_str(&input)
+                    .map_err(|e| Error::illegal_argument(format!("cannot parse ron: {}", e)))?;
+                return Ok(l);
             }
         };
 
