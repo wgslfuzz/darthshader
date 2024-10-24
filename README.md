@@ -40,6 +40,31 @@ For backed compiler crashes, you first need to convert the wgsl file to the form
 ### cs\_6\_2, ps\_6\_3, whaaaat?
 The backend translator dxc requires you to pass the type of shader you're translating as well as a shader version. The type of shader depends on the entrypoint. @compute/@vertex/@fragment correspond to cs_/vs_/ps_, respectively. The shader version should be between 6.2 and 6.6. The fuzzer defaults to 6.6. As an example, a vertex shader of version 6.6 results in `-T vs_6_6`.
 
+### Minimizing Crashes
+Some of the findings might be rather large in size and reducing them manually can be a tedious process. Luckily, the compiler testing community already build all the tooling we need. The `creduce` tool, originally developed for minimizing C compiler tests, features a `--not-c` mode which allows reducing testcases written in languages other than C. Its interface might take a moment to get accustomed to, but it works quite well. Assume we have a .wgsl file which triggers an ASAN violation in dxc. We'd like to reduce the testcase as long as it continues to trigger an ASAN violation. The `creduce` script would look something like (save as `interestingness.sh`):
+
+```bash
+#!/bin/bash
+
+export ASAN_OPTIONS=abort_on_error=1,detect_leaks=0
+rm standalone.hlsl
+/path/to/tint pathToCrash.wgsl -o standalone.hlsl;
+STDE=$((/path/to/dxc-3.7 -T cs_6_6 -opt-disable structurize-loop-exits-for-unroll /Gis /Zpr /enable-16bit-types -HV 2018 standalone.hlsl) 2>&1)
+echo $STDE
+if [[ $STDE == *"heap-use-after-free"* ]]; then
+  exit 0
+fi
+if [[ $STDE == *"heap-buffer-overflow"* ]]; then
+  exit 0
+fi
+if [[ $STDE == *"SEGV on"* ]]; then
+  exit 0
+fi
+exit 1
+```
+
+We can now invoke `creduce --not-c ./interestingness.sh pathToCrash.wgsl` which should reduce the wgsl file quite substantially.
+
 ## Further Components
 
 ### ****Seeds****
