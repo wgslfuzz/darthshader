@@ -12,7 +12,7 @@ use libafl_bolts::AsSlice;
 
 mod ast;
 mod generator;
-mod ir; 
+mod ir;
 mod layeredinput;
 mod randomext;
 
