@@ -271,7 +271,7 @@ struct BarrierGenerator;
 impl StatementGenerator for BarrierGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
         let barriers = [Barrier::STORAGE, Barrier::WORK_GROUP];
-        let barrier = *ctx.rng.choose(&barriers);
+        let barrier = *ctx.rng.choose(&barriers).unwrap();
         Some((Statement::Barrier(barrier), 1))
     }
 }
@@ -396,11 +396,10 @@ impl StatementGenerator for WorkgroupLoadGenerator {
 struct CallGenerator;
 impl StatementGenerator for CallGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
-        if ctx.available_funcs.is_empty() {
-            return None;
-        }
+        let Some(&function) = ctx.rng.choose(&ctx.available_funcs) else {
+            return None
+        };
 
-        let function = *ctx.rng.choose(&ctx.available_funcs);
         let callee = &ctx.module.functions[function];
         let arguments: Option<Vec<Handle<Expression>>> = callee
             .arguments
@@ -486,7 +485,7 @@ impl StatementGenerator for AtomicGenerator {
             AF::Subtract,
         ];
         assert_eq!(std::mem::variant_count::<AF>(), atomic_funcs.len() + 1);
-        let fun = *ctx.rng.choose(&atomic_funcs);
+        let fun = *ctx.rng.choose(&atomic_funcs).unwrap();
 
         let ty = ctx.module.types.insert(
             Type {

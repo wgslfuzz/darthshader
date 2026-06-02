@@ -1,13 +1,21 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, time::Duration};
+use std::borrow::Cow;
+
 use libafl::{
-    monitors::{AggregatorOps, UserStats, UserStatsValue},
-    prelude::{
-        Event, EventFirer, ExitKind, Feedback, Observer, ObserversTuple, Testcase, UsesInput,
-    },
-    state::{HasClientPerfMonitor, HasMetadata, State},
+    common::HasMetadata,
+    corpus::Testcase,
+    events::{Event, EventFirer, EventWithStats, ExecStats},
+    executors::ExitKind,
+    feedbacks::{Feedback, StateInitializer},
+    monitors::stats::{AggregatorOps, UserStats, UserStatsValue},
+    observers::{Observer, ObserversTuple},
+    state::{HasClientPerfMonitor, HasExecutions},
 };
 use libafl_bolts::{
-    current_nanos, impl_serdeany, prelude::OwnedMutSlice, AsMutSlice, AsSlice, Error, Named,
+    current_time, impl_serdeany,
+    ownedref::OwnedMutSlice,
+    tuples::{Handle, Handled, MatchNameRef},
+    AsSlice, Error, Named,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +35,7 @@ impl ExitMetadata {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ExitObserver<'a> {
-    name: String,
+    name: Cow<'static, str>,
     owned: OwnedMutSlice<'a, u8>,
     last_exit: Option<u8>,
 }
@@ -37,7 +45,7 @@ impl<'a> ExitObserver<'a> {
     #[must_use]
     pub fn new(name: &'static str, shmem: &'a mut [u8]) -> Self {
         Self {
-            name: name.to_string(),
+            name: Cow::from(name),
             owned: OwnedMutSlice::from(shmem),
             last_exit: None,
         }
@@ -50,13 +58,10 @@ impl<'a> ExitObserver<'a> {
     }
 }
 
-impl<S> Observer<S> for ExitObserver<'_>
-where
-    S: UsesInput,
-{
-    fn pre_exec(&mut self, _state: &mut S, _input: &S::Input) -> Result<(), Error> {
-        self.owned.as_mut_slice()[0] = 0;
-        self.owned.as_mut_slice()[1] = 0;
+impl<I, S> Observer<I, S> for ExitObserver<'_> {
+    fn pre_exec(&mut self, _state: &mut S, _input: &I) -> Result<(), Error> {
+        self.owned[0] = 0;
+        self.owned[1] = 0;
         self.last_exit = None;
         Ok(())
     }
@@ -64,10 +69,10 @@ where
     fn post_exec(
         &mut self,
         _state: &mut S,
-        _input: &S::Input,
+        _input: &I,
         _exit_kind: &ExitKind,
     ) -> Result<(), Error> {
-        if self.owned.as_mut_slice()[1] == 1 {
+        if self.owned[1] == 1 {
             self.last_exit = Some(self.owned.as_slice()[0]);
         }
         Ok(())
@@ -75,37 +80,36 @@ where
 }
 
 impl Named for ExitObserver<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Cow<'static, str> {
         &self.name
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ExitFeedback {
-    name: String,
-    last_update: u64,
+pub struct ExitFeedback<'a> {
+    name: Cow<'static, str>,
+    observer_handle: Handle<ExitObserver<'a>>,
+    last_update: Duration,
     execs_suc: u64,
     execs_err: u64,
 }
 
-impl<S> Feedback<S> for ExitFeedback
+impl<EM, I, OT, S> Feedback<EM, I, OT, S> for ExitFeedback<'_>
 where
-    S: UsesInput + HasClientPerfMonitor + State,
+    EM: EventFirer<I, S>,
+    OT: ObserversTuple<I, S>,
+    S: HasClientPerfMonitor + HasExecutions,
 {
     #[allow(clippy::wrong_self_convention)]
-    fn is_interesting<EM, OT>(
+    fn is_interesting(
         &mut self,
         state: &mut S,
         manager: &mut EM,
-        _input: &S::Input,
+        _input: &I,
         observers: &OT,
         _exit_kind: &ExitKind,
-    ) -> Result<bool, Error>
-    where
-        EM: EventFirer<State = S>,
-        OT: ObserversTuple<S>,
-    {
-        let observer = observers.match_name::<ExitObserver>(self.name()).unwrap();
+    ) -> Result<bool, Error> {
+        let observer = observers.get(&self.observer_handle).unwrap();
         if let Some(last_exit) = *observer.last_exit() {
             if last_exit == 0 {
                 self.execs_suc += 1;
@@ -114,76 +118,77 @@ where
             }
         }
 
-        let now = current_nanos();
+        let now = current_time();
         if now < self.last_update {
             self.last_update = now;
-        } else if now - self.last_update > 60_000_000_000 {
+        } else if now - self.last_update > Duration::from_secs(60) {
             self.last_update = now;
             manager.fire(
                 state,
-                Event::UpdateUserStats {
-                    name: "execs_err".to_string(),
-                    value: UserStats::new(
-                        UserStatsValue::Number(self.execs_err),
-                        AggregatorOps::Sum,
-                    ),
-                    phantom: PhantomData,
-                },
+                EventWithStats::new(
+                    Event::UpdateUserStats {
+                        name: Cow::from("execs_err"),
+                        value: UserStats::new(
+                            UserStatsValue::Number(self.execs_err),
+                            AggregatorOps::Sum,
+                        ),
+                        phantom: PhantomData,
+                    },
+                    ExecStats::new(now, *state.executions()),
+                ),
             )?;
             manager.fire(
                 state,
-                Event::UpdateUserStats {
-                    name: "execs_suc".to_string(),
-                    value: UserStats::new(
-                        UserStatsValue::Number(self.execs_suc),
-                        AggregatorOps::Sum,
-                    ),
-                    phantom: PhantomData,
-                },
+                EventWithStats::new(
+                    Event::UpdateUserStats {
+                        name: Cow::from("execs_suc"),
+                        value: UserStats::new(
+                            UserStatsValue::Number(self.execs_suc),
+                            AggregatorOps::Sum,
+                        ),
+                        phantom: PhantomData,
+                    },
+                    ExecStats::new(now, *state.executions()),
+                ),
             )?;
         }
         Ok(false)
     }
 
     #[inline]
-    fn append_metadata<OT>(
+    fn append_metadata(
         &mut self,
         _state: &mut S,
+        _event_manager: &mut EM,
         observers: &OT,
-        testcase: &mut Testcase<S::Input>,
-    ) -> Result<(), Error>
-    where
-        OT: ObserversTuple<S>,
-    {
-        let observer = observers.match_name::<ExitObserver>(self.name()).unwrap();
+        testcase: &mut Testcase<I>,
+    ) -> Result<(), Error> {
+        let observer = observers.get(&self.observer_handle).unwrap();
         if let Some(last_exit) = *observer.last_exit() {
             testcase.add_metadata(ExitMetadata::new(last_exit));
         }
 
         Ok(())
     }
+}
 
-    /// Discard the stored metadata in case that the testcase is not added to the corpus
+impl Named for ExitFeedback<'_> {
     #[inline]
-    fn discard_metadata(&mut self, _state: &mut S, _input: &S::Input) -> Result<(), Error> {
-        Ok(())
+    fn name(&self) -> &Cow<'static, str> {
+        &self.name
     }
 }
 
-impl Named for ExitFeedback {
-    #[inline]
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-}
+impl<S> StateInitializer<S> for ExitFeedback<'_> {}
 
-impl ExitFeedback {
+impl<'a> ExitFeedback<'a> {
     /// Creates a new [`ExitFeedback`], deciding if the given [`ExitObserver`] value of a run is interesting.
     #[must_use]
-    pub fn with_observer(observer: &ExitObserver) -> Self {
+    pub fn with_observer(observer: &ExitObserver<'a>) -> Self {
         Self {
-            name: observer.name().to_string(),
-            last_update: current_nanos(),
+            name: observer.name().clone(),
+            observer_handle: observer.handle(),
+            last_update: current_time(),
             execs_err: 0,
             execs_suc: 0,
         }

@@ -6,15 +6,13 @@ use libafl_bolts::impl_serdeany;
 use serde::{Deserialize, Serialize};
 
 use libafl::{
-    corpus::{Corpus, CorpusId},
+    common::{HasMetadata, HasNamedMetadata},
+    corpus::{Corpus, CorpusId, HasCurrentCorpusId, Testcase},
     events::EventFirer,
     executors::Executor,
     fuzzer::Evaluator,
-    inputs::UsesInput,
-    stages::Stage,
-    state::{
-        HasClientPerfMonitor, HasCorpus, HasMetadata, HasNamedMetadata, HasRand, State, UsesState,
-    },
+    stages::{Restartable, Stage},
+    state::{HasClientPerfMonitor, HasCorpus, HasCurrentTestcase, HasRand},
     Error, HasScheduler,
 };
 
@@ -47,22 +45,23 @@ impl LadderNoDescendMetadata {
     }
 }
 
+fn may_ascend(testcase: &Testcase<LayeredInput>) -> bool {
+    !testcase.has_metadata::<LadderNoAscendMetadata>()
+}
+
+fn may_descend(testcase: &Testcase<LayeredInput>) -> bool {
+    !testcase.has_metadata::<LadderNoDescendMetadata>()
+}
+
 /// The calibration stage will measure the average exec time and the target's stability for this input.
 #[derive(Clone, Debug)]
 pub struct LadderStage<S> {
     phantom: PhantomData<S>,
 }
 
-impl<S> UsesState for LadderStage<S>
-where
-    S: UsesInput + State,
-{
-    type State = S;
-}
-
 impl<S> LadderStage<S>
 where
-    S: HasCorpus + HasMetadata + HasNamedMetadata,
+    S: HasCorpus<LayeredInput> + HasMetadata + HasNamedMetadata,
 {
     /// Create a new [`LadderStage`].
     #[must_use]
@@ -70,24 +69,6 @@ where
         Self {
             phantom: PhantomData,
         }
-    }
-
-    fn may_ascend(state: &S, corpus_idx: CorpusId) -> bool {
-        !state
-            .corpus()
-            .get(corpus_idx)
-            .unwrap()
-            .borrow()
-            .has_metadata::<LadderNoAscendMetadata>()
-    }
-
-    fn may_descend(state: &S, corpus_idx: CorpusId) -> bool {
-        !state
-            .corpus()
-            .get(corpus_idx)
-            .unwrap()
-            .borrow()
-            .has_metadata::<LadderNoDescendMetadata>()
     }
 
     fn prohibit_ascend(state: &S, corpus_idx: CorpusId) {
@@ -109,16 +90,17 @@ where
     }
 }
 
-impl<E, EM, Z> Stage<E, EM, Z> for LadderStage<E::State>
+impl<E, EM, S, Z> Stage<E, EM, S, Z> for LadderStage<S>
 where
-    E: Executor<EM, Z>,
-    EM: EventFirer<State = E::State>,
-    E::State: HasCorpus<Input = LayeredInput>
+    E: Executor<EM, LayeredInput, S, Z>,
+    EM: EventFirer<LayeredInput, S>,
+    S: HasCorpus<LayeredInput>
+        + HasCurrentCorpusId
         + HasMetadata
         + HasClientPerfMonitor
         + HasNamedMetadata
         + HasRand,
-    Z: Evaluator<E, EM, State = E::State> + HasScheduler,
+    Z: Evaluator<E, EM, LayeredInput, S> + HasScheduler<LayeredInput, S>,
 {
     #[inline]
     #[allow(
@@ -130,24 +112,22 @@ where
         &mut self,
         fuzzer: &mut Z,
         executor: &mut E,
-        state: &mut E::State,
+        state: &mut S,
         mgr: &mut EM,
-        corpus_idx: CorpusId,
     ) -> Result<(), Error> {
-        {
-            let entry = state.corpus().get(corpus_idx)?.borrow();
-            if entry.scheduled_count() > 0 {
-                return Ok(());
-            }
+        if state.current_testcase()?.scheduled_count() > 0 {
+            return Ok(());
         }
-        println!("scheduling for ladder {}", corpus_idx);
 
-        let input = state.corpus().cloned_input_for_id(corpus_idx)?;
+        let id = state.current_corpus_id()?.unwrap();
+        println!("scheduling for ladder {}", id);
+
+        let input = state.current_input_cloned()?;
 
         match input {
             LayeredInput::IR(ir) => {
                 println!("IR ladder");
-                if Self::may_descend(state, corpus_idx) {
+                if may_descend(&*state.current_testcase().unwrap()) {
                     let Ok(text) = ir.try_get_text() else {
                         return Ok(());
                     };
@@ -161,7 +141,7 @@ where
                 }
             }
             LayeredInput::Ast(ast) => {
-                if Self::may_ascend(state, corpus_idx) {
+                if may_ascend(&*state.current_testcase().unwrap()) {
                     let text = ast.get_text().to_owned();
                     let result = std::panic::catch_unwind(|| {
                         let result: Result<IR, _> = text.as_str().try_into();
@@ -179,6 +159,21 @@ where
             }
         };
 
+        Ok(())
+    }
+}
+
+// TODO: Either rework this custom stage to be a custom mutator, or do something
+// more intelligent here around restarts. Given that this stage executes inputs,
+// it might crash the process (e.g. if using in-process execution). When libafl
+// restarts, we should not attempt to run the crashing input again and again,
+// lest we get stuck in a crashing loop.
+impl<S> Restartable<S> for LadderStage<S> {
+    fn should_restart(&mut self, _state: &mut S) -> Result<bool, Error> {
+        Ok(true)
+    }
+
+    fn clear_progress(&mut self, _state: &mut S) -> Result<(), Error> {
         Ok(())
     }
 }

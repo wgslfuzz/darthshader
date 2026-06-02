@@ -24,14 +24,14 @@ members = [
 tree-sitter = "0.21"
 link-cplusplus = "1.0"
 naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
-libafl = { version = "0.11.2", features = ["default", "introspection"] }
-libafl_bolts = "0.11.2"
+libafl = { version = "0.15.4", features = ["default", "introspection"] }
+libafl_bolts = "0.15.4"
 clap = { version = "4", features = ["derive"] }
 serde = "1"
 ron = "0.8"
 ahash = "0.8"
 hashbrown = "0.*"
-rand = { version = "0.8", features = ["small_rng"] }
+rand = { version = "0.9", features = ["small_rng"] }
 tinyvec = { version = "1", features = ["serde"] }
 tinystr = { version = "0.7", features = ["serde"] }
 bitflags = "1"

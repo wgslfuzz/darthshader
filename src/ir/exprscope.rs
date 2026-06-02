@@ -255,7 +255,7 @@ impl ExprScope {
         let scope_len = self.scope_available.len();
         let always_len = self.always_available.len();
         let total = scope_len + always_len;
-        let idx = rng.gen_range(0..total);
+        let idx = rng.random_range(0..total);
 
         if idx < scope_len {
             Some(self.scope_available[idx])

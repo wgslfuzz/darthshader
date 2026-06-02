@@ -45,7 +45,7 @@ where
 
 impl MinMax<u32> {
     pub fn choose(&self, rng: &mut StdRand) -> u32 {
-        rng.between(self.min as u64, self.max as u64) as u32
+        rng.between(self.min as usize, self.max as usize) as u32
     }
 }
 

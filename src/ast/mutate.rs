@@ -1,5 +1,8 @@
+use std::borrow::Cow;
+
 use libafl::{
-    prelude::{Corpus, MutationResult, Mutator},
+    corpus::{Corpus, CorpusId},
+    mutators::{MutationResult, Mutator},
     state::{HasCorpus, HasRand},
 };
 use libafl_bolts::{
@@ -54,21 +57,17 @@ impl ASTSpliceMutator {
 }
 
 impl Named for ASTSpliceMutator {
-    fn name(&self) -> &str {
-        "ASTSpliceMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTSpliceMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTSpliceMutator
+impl<S> Mutator<LayeredInput, S> for ASTSpliceMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -102,7 +101,7 @@ where
         let kind_aux = aux.get_node(handle_aux).kind;
 
         let insert_point = {
-            if rng.gen_bool(0.5) {
+            if rng.random_bool(0.5) {
                 let (insert_point, _) = ast.iter().choose(&mut rng).unwrap();
                 insert_point
             } else if let Some(insert_point) = ast
@@ -125,11 +124,15 @@ where
 
         ast.splice(insert_point, aux, handle_aux);
 
-        if rng.gen_bool(0.5) {
+        if rng.random_bool(0.5) {
             return Ok(MutationResult::Mutated);
         }
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -145,28 +148,24 @@ impl ASTDeleteMutator {
 }
 
 impl Named for ASTDeleteMutator {
-    fn name(&self) -> &str {
-        "ASTDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTDeleteMutator
+impl<S> Mutator<LayeredInput, S> for ASTDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
 
         let max_del = std::cmp::min(50, ast.len() / 10);
         let max_del = std::cmp::max(10, max_del);
-        let max_del = 1 + state.rand_mut().below(max_del as u64) as usize;
+        let max_del = 1 + state.rand_mut().below_or_zero(max_del);
         let mut rng = SmallRng::seed_from_u64(state.rand_mut().next());
 
         let mut handle = ast
@@ -196,9 +195,13 @@ where
         assert!(deleted > 0);
         Ok(MutationResult::Mutated)
     }
-}
-#[derive(Default, Debug)]
 
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct ASTIdentifierMutator;
 
 impl ASTIdentifierMutator {
@@ -210,21 +213,17 @@ impl ASTIdentifierMutator {
 }
 
 impl Named for ASTIdentifierMutator {
-    fn name(&self) -> &str {
-        "ASTIdentifierMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTIdentifierMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTIdentifierMutator
+impl<S> Mutator<LayeredInput, S> for ASTIdentifierMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -269,6 +268,10 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -283,21 +286,17 @@ impl ASTSwapChildrenMutator {
 }
 
 impl Named for ASTSwapChildrenMutator {
-    fn name(&self) -> &str {
-        "ASTSwapChildrenMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTSwapChildrenMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTSwapChildrenMutator
+impl<S> Mutator<LayeredInput, S> for ASTSwapChildrenMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -327,10 +326,15 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
 pub struct ASTReplaceTokenMutator {
+    /// The list of tokens from `dictionary.txt`. Never empty.
     token: Vec<String>,
 }
 
@@ -344,21 +348,17 @@ impl ASTReplaceTokenMutator {
 }
 
 impl Named for ASTReplaceTokenMutator {
-    fn name(&self) -> &str {
-        "ASTReplaceTokenMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTReplaceTokenMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTReplaceTokenMutator
+impl<S> Mutator<LayeredInput, S> for ASTReplaceTokenMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -380,9 +380,13 @@ where
         };
 
         let node = ast.get_node_mut(handle);
-        node.set_text(state.rand_mut().choose(&self.token));
+        node.set_text(state.rand_mut().choose(&self.token).unwrap());
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -398,21 +402,17 @@ impl ASTDeepenMutator {
 }
 
 impl Named for ASTDeepenMutator {
-    fn name(&self) -> &str {
-        "ASTDeepenMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("ASTDeepenMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ASTDeepenMutator
+impl<S> Mutator<LayeredInput, S> for ASTDeepenMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::Ast(ast) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -453,11 +453,10 @@ where
             handles
         };
 
-        if handles.is_empty() {
+        let Some(&handle) = state.rand_mut().choose(&handles) else {
             return Ok(MutationResult::Skipped);
-        }
+        };
 
-        let handle = *state.rand_mut().choose(&handles);
         let node = ast.get_node(handle);
 
         let (subtree, handle_translate) = ast.extract_subtree(handle);
@@ -507,8 +506,8 @@ where
         let max_dup_fac = cmp::min(max_dup_fac, 4_096 / extension.len());
         let max_dup_fac = cmp::max(1, max_dup_fac);
 
-        let dup_magnitude = usize::ilog2(max_dup_fac) as u64;
-        let dup_fac = 1 << state.rand_mut().below(dup_magnitude + 1);
+        let dup_magnitude = usize::ilog2(max_dup_fac) as usize;
+        let dup_fac = 1 << state.rand_mut().below_or_zero(dup_magnitude + 1);
 
         ast.reserve(dup_fac * extension.len() + subtree.len());
         for _ in 0..dup_fac {
@@ -518,5 +517,9 @@ where
         ast.merge_ast(handle_insert, &subtree);
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }

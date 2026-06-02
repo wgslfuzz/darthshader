@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 use libafl::{generators::Generator, state::HasRand};
@@ -13,7 +14,7 @@ use naga::{
     Type, TypeInner, VectorSize,
 };
 use rand::{
-    seq::{IteratorRandom, SliceRandom},
+    seq::{IndexedRandom, IteratorRandom, SliceRandom},
     RngCore,
 };
 
@@ -185,15 +186,19 @@ impl EntryPointSpec {
     }
 
     fn random_io(location: u32, rng: &mut StdRand) -> (TypeInner, Binding) {
-        let (kind, width) = rng.choose([
-            (ScalarKind::Sint, 4),
-            (ScalarKind::Uint, 4),
-            (ScalarKind::Float, 4),
-        ]);
+        let (kind, width) = rng
+            .choose([
+                (ScalarKind::Sint, 4),
+                (ScalarKind::Uint, 4),
+                (ScalarKind::Float, 4),
+            ])
+            .unwrap();
         let inner = if rng.probability(0.5) {
             TypeInner::Scalar { kind, width }
         } else {
-            let size = rng.choose([VectorSize::Bi, VectorSize::Tri, VectorSize::Quad]);
+            let size = rng
+                .choose([VectorSize::Bi, VectorSize::Tri, VectorSize::Quad])
+                .unwrap();
             TypeInner::Vector { size, kind, width }
         };
 
@@ -213,6 +218,7 @@ impl EntryPointSpec {
                     Interpolation::Linear,
                     Interpolation::Perspective,
                 ])
+                .unwrap()
             } else {
                 Interpolation::Flat
             }
@@ -331,7 +337,7 @@ impl<'a> GlobalGenCtx<'a> {
     fn create_entrypoint_arguments(&mut self, stage: ShaderStage) -> Vec<FunctionArgument> {
         let mut inputs = EntryPointSpec::optional_inputs(stage).to_owned();
         inputs.shuffle(&mut self.rng);
-        inputs.truncate(self.rng.below(inputs.len() as u64 + 1) as usize);
+        inputs.truncate(self.rng.below_or_zero(inputs.len() + 1));
         if self.rng.probability(0.5) {
             let num_scalars = self.rng.between(1, 5) as u32;
             for idx in 0..num_scalars {
@@ -340,7 +346,7 @@ impl<'a> GlobalGenCtx<'a> {
         }
         inputs.shuffle(&mut self.rng);
         let min_inputs = if inputs.is_empty() { 0 } else { 1 };
-        let num_args = self.rng.between(min_inputs, inputs.len() as u64) as usize;
+        let num_args = self.rng.between(min_inputs, inputs.len());
         let mut args = Vec::with_capacity(num_args);
         let mut remaining_inputs = inputs.len();
         for idx in 0..num_args {
@@ -350,7 +356,7 @@ impl<'a> GlobalGenCtx<'a> {
                 1
             };
             let max_params = remaining_inputs - (num_args - idx - 1);
-            let params = self.rng.between(min_params as u64, max_params as u64) as usize;
+            let params = self.rng.between(min_params, max_params);
             remaining_inputs -= params;
             let (ty, binding) = {
                 if params == 1 && self.rng.probability(0.8) {
@@ -380,8 +386,7 @@ impl<'a> GlobalGenCtx<'a> {
             ShaderStage::Vertex | ShaderStage::Fragment => {
                 let mut optional_outputs = EntryPointSpec::optional_outputs(stage).to_owned();
                 optional_outputs.shuffle(&mut self.rng);
-                optional_outputs
-                    .truncate(self.rng.below(optional_outputs.len() as u64 + 1) as usize);
+                optional_outputs.truncate(self.rng.below_or_zero(optional_outputs.len() + 1));
                 let mut outputs = optional_outputs;
                 if let Some(required_output) = EntryPointSpec::required_output(stage) {
                     outputs.push(required_output);
@@ -484,8 +489,8 @@ impl<'a> GlobalGenCtx<'a> {
 
     fn create_matrix_type(&mut self) -> Option<Type> {
         let vector_sizes = [VectorSize::Bi, VectorSize::Tri, VectorSize::Quad];
-        let columns = *self.rng.choose(&vector_sizes);
-        let rows = *self.rng.choose(&vector_sizes);
+        let columns = *self.rng.choose(&vector_sizes).unwrap();
+        let rows = *self.rng.choose(&vector_sizes).unwrap();
         let inner = TypeInner::Matrix {
             columns,
             rows,
@@ -532,7 +537,7 @@ impl<'a> GlobalGenCtx<'a> {
 
     fn create_vector_type(&mut self) -> Option<Type> {
         let vector_sizes = [VectorSize::Bi, VectorSize::Tri, VectorSize::Quad];
-        let size = *self.rng.choose(&vector_sizes);
+        let size = *self.rng.choose(&vector_sizes).unwrap();
 
         let scalar_def = [
             (ScalarKind::Bool, 1),
@@ -540,7 +545,7 @@ impl<'a> GlobalGenCtx<'a> {
             (ScalarKind::Uint, 4),
             (ScalarKind::Float, 4),
         ];
-        let (kind, width) = *self.rng.choose(&scalar_def);
+        let (kind, width) = *self.rng.choose(&scalar_def).unwrap();
         let inner = TypeInner::Vector { size, kind, width };
         Some(Type { name: None, inner })
     }
@@ -571,7 +576,7 @@ impl<'a> GlobalGenCtx<'a> {
     }
 
     fn create_type(&mut self) -> Option<Handle<Type>> {
-        let ty = match self.rng.below(5) {
+        let ty = match self.rng.below_or_zero(5) {
             0 => self.create_struct_type(),
             1 => self.create_vector_type(),
             2 => self.create_matrix_type(),
@@ -601,14 +606,14 @@ impl<'a> GlobalGenCtx<'a> {
             StorageAccess::LOAD,
             StorageAccess::LOAD | StorageAccess::STORE,
         ];
-        let access = *self.rng.choose(&accesses);
+        let access = *self.rng.choose(&accesses).unwrap();
         let spaces = [
             AddressSpace::Private,
             AddressSpace::Uniform,
             AddressSpace::WorkGroup,
             AddressSpace::Storage { access },
         ];
-        let space = *self.rng.choose(&spaces);
+        let space = *self.rng.choose(&spaces).unwrap();
         let (required_type_flags, is_resource) = match space {
             AddressSpace::Private => (TypeFlags::CONSTRUCTIBLE, false),
             AddressSpace::WorkGroup => (TypeFlags::DATA | TypeFlags::SIZED, false),
@@ -695,8 +700,8 @@ impl<'a> GlobalGenCtx<'a> {
             return self.module.functions.append(func, Span::UNDEFINED);
         };
 
-        let num_locals = self.rng.below(5);
-        let num_args = self.rng.below(3);
+        let num_locals = self.rng.below_or_zero(5);
+        let num_args = self.rng.below_or_zero(3);
         let filter_constructible = |handle, _: &TypeInner| {
             let type_flags: TypeFlags = info[handle];
             type_flags.contains(TypeFlags::CONSTRUCTIBLE)
@@ -765,10 +770,10 @@ impl<'a> GlobalGenCtx<'a> {
             ShaderStage::Vertex,
         ];
         assert_eq!(std::mem::variant_count::<ShaderStage>(), stages.len());
-        let stage = *self.rng.choose(&stages);
+        let stage = *self.rng.choose(&stages).unwrap();
 
         let mut func = Function::default();
-        let num_locals = self.rng.below(5);
+        let num_locals = self.rng.below_or_zero(5);
 
         func.arguments = self.create_entrypoint_arguments(stage);
         if let Some(result) = self.create_entrypoint_result(stage) {
@@ -1093,8 +1098,8 @@ impl<'a> FunctionGenCtx<'a> {
 
     pub fn recursive_budget(&mut self, initial_budget: u32, num_cases: u32) -> u32 {
         let base_budget = initial_budget / num_cases;
-        let min_budget = (base_budget as f32 * self.config.recursive_budget_rate.min) as u64;
-        let max_budget = (base_budget as f32 * self.config.recursive_budget_rate.max) as u64;
+        let min_budget = (base_budget as f32 * self.config.recursive_budget_rate.min) as usize;
+        let max_budget = (base_budget as f32 * self.config.recursive_budget_rate.max) as usize;
         let budget = self.rng.between(min_budget, max_budget);
         std::cmp::max(1, budget) as u32
     }
@@ -1126,8 +1131,9 @@ impl IRGenerator {
 }
 
 impl Named for IRGenerator {
-    fn name(&self) -> &str {
-        "IRGenerator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRGenerator");
+        &NAME
     }
 }
 

@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use libafl_bolts::rands::{Rand, StdRand};
 use naga::{
     valid::{ShaderStages, TypeFlags},
@@ -160,7 +162,7 @@ impl ConstExpressionGenerator for ConstantGenerator {
 struct LiteralGenerator;
 impl LiteralGenerator {
     fn generate(rng: &mut StdRand) -> Option<Expression> {
-        let literal = match rng.below(4) {
+        let literal = match rng.below_or_zero(4) {
             0 => Literal::F32(rng.random_f32()),
             1 => Literal::U32(rng.random_u32()),
             2 => Literal::I32(rng.random_i32()),
@@ -191,7 +193,7 @@ impl ExpressionGenerator for UnaryGenerator {
         use TypeInner as TI;
         let unary_ops = [Uo::BitwiseNot, Uo::LogicalNot, Uo::Negate];
         assert_eq!(std::mem::variant_count::<Uo>(), unary_ops.len());
-        let op = *ctx.rng.choose(&unary_ops);
+        let op = *ctx.rng.choose(&unary_ops).unwrap();
 
         let filter = match op {
             Uo::LogicalNot => |_, ty: &TypeInner| {
@@ -252,7 +254,7 @@ impl ExpressionGenerator for BinaryGenerator {
         ];
         assert_eq!(std::mem::variant_count::<Bi>(), binary_ops.len());
 
-        let op = *ctx.rng.choose(&binary_ops);
+        let op = *ctx.rng.choose(&binary_ops).unwrap();
         let (left, right) = match op {
             Bi::ShiftLeft | Bi::ShiftRight => {
                 let filter = |_, ty: &TypeInner| {
@@ -438,7 +440,7 @@ impl SplatGenerator {
         use naga::VectorSize as Vs;
         let sizes = [Vs::Bi, Vs::Tri, Vs::Quad];
         assert_eq!(std::mem::variant_count::<Vs>(), sizes.len());
-        let size = *rng.choose(&sizes);
+        let size = *rng.choose(&sizes).unwrap();
 
         let is_scalar = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar { .. });
         let (value, _) = scope.matching(is_scalar, types)?;
@@ -475,15 +477,15 @@ impl ExpressionGenerator for SwizzleGenerator {
         };
 
         let pattern = [
-            *ctx.rng.choose(components),
-            *ctx.rng.choose(components),
-            *ctx.rng.choose(components),
-            *ctx.rng.choose(components),
+            *ctx.rng.choose(components).unwrap(),
+            *ctx.rng.choose(components).unwrap(),
+            *ctx.rng.choose(components).unwrap(),
+            *ctx.rng.choose(components).unwrap(),
         ];
 
         let sizes = [Vs::Bi, Vs::Tri, Vs::Quad];
         assert_eq!(std::mem::variant_count::<Vs>(), sizes.len());
-        let size = *ctx.rng.choose(&sizes);
+        let size = *ctx.rng.choose(&sizes).unwrap();
 
         Some(Expression::Swizzle {
             size,
@@ -620,7 +622,7 @@ impl ExpressionGenerator for MathGenerator {
             Mf::Unpack2x16float,
         ];
         assert_eq!(std::mem::variant_count::<Mf>(), mathfuncs.len() + 2);
-        let fun = *ctx.rng.choose(mathfuncs);
+        let fun = *ctx.rng.choose(mathfuncs).unwrap();
 
         let expr = match fun {
             Mf::Abs => {
@@ -1140,7 +1142,7 @@ impl ExpressionGenerator for AsGenerator {
             TypeInner::Scalar { width, .. } | TypeInner::Vector { width, .. } => *width,
             _ => unreachable!(),
         };
-        let kind = ctx.rng.choose([S::Float, S::Sint, S::Uint]);
+        let kind = ctx.rng.choose([S::Float, S::Sint, S::Uint]).unwrap();
         let kind_width = match kind {
             S::Sint | S::Uint => 4u8,
             S::Float => 4,
@@ -1299,11 +1301,11 @@ impl ExpressionGenerator for AccessIndexGenerator {
 
         let (base, ty) = ctx.expr_matching(filter)?;
         let limit = resolve_index_limit(ctx.module, ty, true).unwrap();
-        if limit == 0 {
-            None
-        } else {
-            let index = ctx.rng.below(limit as u64) as u32;
+        if let Some(limit) = NonZeroUsize::new(limit as usize) {
+            let index = ctx.rng.below(limit) as u32;
             Some(Expression::AccessIndex { base, index })
+        } else {
+            None
         }
     }
 }
@@ -1421,11 +1423,11 @@ impl ExpressionGenerator for DerivativeGenerator {
 
         let axes = [RA::X, RA::Y, RA::Width];
         assert_eq!(std::mem::variant_count::<RA>(), axes.len());
-        let axis = *ctx.rng.choose(&axes);
+        let axis = *ctx.rng.choose(&axes).unwrap();
 
         let controls = [RC::None, RC::Fine, RC::Coarse];
         assert_eq!(std::mem::variant_count::<RC>(), controls.len());
-        let ctrl = *ctx.rng.choose(&controls);
+        let ctrl = *ctx.rng.choose(&controls).unwrap();
 
         Some(Expression::Derivative { axis, ctrl, expr })
     }
@@ -1434,11 +1436,10 @@ impl ExpressionGenerator for DerivativeGenerator {
 struct FunctionArgumentGenerator;
 impl ExpressionGenerator for FunctionArgumentGenerator {
     fn generate(ctx: &mut FunctionGenCtx) -> Option<Expression> {
-        if ctx.get_function().arguments.is_empty() {
+        let Some(num_args) = NonZeroUsize::new(ctx.get_function().arguments.len()) else {
             return None;
-        }
-        let arg = ctx.rng.below(ctx.get_function().arguments.len() as u64);
-        Some(Expression::FunctionArgument(arg as u32))
+        };
+        Some(Expression::FunctionArgument(ctx.rng.below(num_args) as u32))
     }
 }
 
@@ -1497,23 +1498,19 @@ impl ExpressionGenerator for RelationalGenerator {
     fn generate(ctx: &mut FunctionGenCtx) -> Option<Expression> {
         use naga::RelationalFunction as Rf;
         let rfs = [Rf::All, Rf::Any];
-        let fun = *ctx.rng.choose(&rfs);
-        let argument = match fun {
-            Rf::All | Rf::Any => {
-                let is_vec_of_bools = |_, ty: &TypeInner| {
-                    matches!(
-                        ty,
-                        TypeInner::Vector {
-                            kind: ScalarKind::Bool,
-                            ..
-                        }
-                    )
-                };
-                let (expr, _) = ctx.expr_matching(is_vec_of_bools)?;
-                expr
-            }
-            _ => unreachable!(),
+        let fun = *ctx.rng.choose(&rfs).unwrap();
+
+        let is_vec_of_bools = |_, ty: &TypeInner| {
+            matches!(
+                ty,
+                TypeInner::Vector {
+                    kind: ScalarKind::Bool,
+                    ..
+                }
+            )
         };
+        let (argument, _) = ctx.expr_matching(is_vec_of_bools)?;
+
         Some(Expression::Relational { fun, argument })
     }
 }
