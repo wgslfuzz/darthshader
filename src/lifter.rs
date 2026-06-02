@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf};
 
 use clap::{Arg, Command};
 use darthshader::layeredinput::LayeredInput;
-use libafl::prelude::HasTargetBytes;
+use libafl::inputs::HasTargetBytes;
 use libafl_bolts::AsSlice;
 
 pub fn main() {

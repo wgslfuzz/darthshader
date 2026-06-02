@@ -1,13 +1,19 @@
-use libafl::prelude::{Error, HasBytesVec, HasTargetBytes, Input};
+use std::fmt::Write;
+use std::hash::{Hash, Hasher};
+use std::time::SystemTime;
+use std::{cell::OnceCell, fs, path::Path};
+
+use libafl::{
+    corpus::CorpusId,
+    inputs::{HasTargetBytes, Input},
+    Error,
+};
 use libafl_bolts::{ownedref::OwnedSlice, HasLen};
 use naga::{
     back::wgsl::Writer, Block, Expression, Function, Handle, Range, ScalarKind, Statement, Type,
     TypeInner,
 };
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
-use std::time::SystemTime;
-use std::{cell::OnceCell, fs, path::Path};
 
 use crate::ast::Ast;
 use crate::ir::iter::{BlockVisitorMut, FunctionIdentifier, IterFuncs};
@@ -15,11 +21,28 @@ use crate::ir::iter::{BlockVisitorMut, FunctionIdentifier, IterFuncs};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IR {
     module: naga::Module,
+
+    /// The result of trying to lift `module` back into WGSL. Lazily computed.
+    /// Entirely derived from `module`, so this is skipped for serialization.
     #[serde(skip)]
     text: OnceCell<Result<String, String>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// Hash `IR` based on `text`, if available.
+impl Hash for IR {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.try_get_text() {
+            Ok(wgsl) => wgsl.hash(state),
+
+            // Hash the error. Presumably such inputs are not used for fuzzing
+            // since they cannot be passed to WGSL shader compilers, so whatever
+            // we do here does not matter a lot.
+            Err(err) => err.hash(state),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Hash)]
 pub enum LayeredInput {
     IR(IR),
     Ast(Ast),
@@ -235,11 +258,15 @@ impl TryFrom<&str> for IR {
 }
 
 impl Input for LayeredInput {
-    fn generate_name(&self, idx: usize) -> String {
+    fn generate_name(&self, idx: Option<CorpusId>) -> String {
         let delta = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap();
-        format!("{:010}_{:06}.ron", delta.as_secs(), idx)
+        let id = match idx {
+            Some(idx) => format!("{:06}", idx),
+            None => "None".into(),
+        };
+        format!("{:010}_{:06}.ron", delta.as_secs(), id)
     }
 
     fn from_file<P>(path: P) -> Result<Self, Error>
@@ -350,7 +377,7 @@ impl HasLen for LayeredInput {
 }
 
 impl HasTargetBytes for LayeredInput {
-    fn target_bytes(&self) -> OwnedSlice<u8> {
+    fn target_bytes(&self) -> OwnedSlice<'_, u8> {
         let slice = match self {
             Self::IR(module) => match module.try_get_text() {
                 Ok(text) => text.as_bytes(),
@@ -359,23 +386,5 @@ impl HasTargetBytes for LayeredInput {
             Self::Ast(ast) => ast.get_text().as_bytes(),
         };
         slice.into()
-    }
-}
-
-impl HasBytesVec for LayeredInput {
-    fn bytes(&self) -> &[u8] {
-        match self {
-            Self::IR(module) => match module.try_get_text() {
-                Ok(text) => text.as_bytes(),
-                Err(_) => &[],
-            },
-            Self::Ast(ast) => ast.get_text().as_bytes(),
-        }
-    }
-
-    fn bytes_mut(&mut self) -> &mut Vec<u8> {
-        match self {
-            _ => panic!("Must not be called on AST/IR"),
-        }
     }
 }

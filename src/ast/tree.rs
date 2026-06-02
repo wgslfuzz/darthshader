@@ -245,8 +245,18 @@ pub struct Ast {
     nodes: Vec<ASTNodeOrHole>,
     free_nodes: Vec<ASTHandle>,
     root: ASTHandle,
+
+    /// The text representation of this AST. Lazily computed.
+    /// Skipped for serialization as it is entirely derived from tree contents.
     #[serde(skip)]
     text: OnceCell<String>,
+}
+
+/// Hash `Ast` based on its text representation, for simplicity.
+impl Hash for Ast {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_text().hash(state)
+    }
 }
 
 #[derive(Debug)]

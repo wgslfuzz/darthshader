@@ -3,7 +3,7 @@ use libafl_bolts::rands::Rand;
 pub(crate) trait RandExt: Rand {
     fn probability(&mut self, p: f64) -> bool {
         assert!((0.0..=1.0).contains(&p));
-        p * 10000f64 >= self.below(10001) as f64
+        p * 10000f64 >= self.below_or_zero(10001) as f64
     }
 
     fn random_i32(&mut self) -> i32 {
@@ -59,7 +59,7 @@ pub(crate) trait RandExt: Rand {
         ];
 
         if self.probability(0.5) {
-            *self.choose(interesting)
+            *self.choose(interesting).unwrap()
         } else {
             self.next() as i32
         }
@@ -79,9 +79,9 @@ pub(crate) trait RandExt: Rand {
         ];
 
         if self.probability(0.5) {
-            *self.choose(interesting)
+            *self.choose(interesting).unwrap()
         } else {
-            self.between(0, u32::MAX as u64) as u32
+            self.between(0, u32::MAX as usize) as u32
         }
     }
 
@@ -118,7 +118,7 @@ pub(crate) trait RandExt: Rand {
         ];
 
         if self.probability(0.5) {
-            *self.choose(interesting)
+            *self.choose(interesting).unwrap()
         } else {
             self.next() as f32
         }
@@ -133,13 +133,13 @@ pub(crate) trait RandExt: Rand {
     }
 
     fn shuffle<T>(&mut self, s: &mut [T]) {
-        let n = s.len() as u64;
+        let n = s.len();
         if n < 2 {
             return;
         }
         for i in 0..=n - 2 {
             let j = self.between(i, n - 1);
-            s.swap(i as usize, j as usize);
+            s.swap(i, j);
         }
     }
 }

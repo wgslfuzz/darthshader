@@ -8,36 +8,37 @@ use std::{
     env,
     fs::{self, OpenOptions},
     io::Write,
+    ops::DerefMut,
     path::PathBuf,
     process,
 };
 
 use clap::{Arg, ArgAction, Command};
 use libafl::{
+    common::HasMetadata,
     corpus::{Corpus, InMemoryOnDiskCorpus, OnDiskCorpus},
-    events::SimpleEventManager,
-    executors::forkserver::{ForkserverExecutor, TimeoutForkserverExecutor},
+    events::simple::SimpleEventManager,
+    executors::{ForkserverExecutor, StdChildArgs},
     feedback_and_fast, feedback_or,
     feedbacks::{ConstFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::Input,
     monitors::SimpleMonitor,
     mutators::StdMOptMutator,
-    observers::{HitcountsMapObserver, StdMapObserver, TimeObserver},
-    prelude::{forkserver::HasForkserver, CorpusId},
+    observers::{CanTrack, HitcountsMapObserver, StdMapObserver, TimeObserver},
     schedulers::{
         powersched::PowerSchedule, IndexesLenTimeMinimizerScheduler, StdWeightedScheduler,
     },
     stages::{calibrate::CalibrationStage, power::StdPowerMutationalStage, IfStage},
-    state::{HasCorpus, HasMetadata, HasRand, StdState},
+    state::{HasCorpus, HasCurrentTestcase, HasRand, StdState},
     Error,
 };
 use libafl_bolts::{
     current_nanos, current_time,
     rands::{Rand, StdRand},
     shmem::{unix_shmem::UnixShMem, ShMem, ShMemProvider, UnixShMemProvider},
-    tuples::tuple_list,
-    AsMutSlice,
+    tuples::{tuple_list, Handled},
+    StdTargetArgs,
 };
 
 use nix::sys::signal::Signal;
@@ -234,13 +235,10 @@ fn fuzz(
 
     let log = RefCell::new(OpenOptions::new().append(true).create(true).open(logfile)?);
 
-    let monitor = SimpleMonitor::with_user_monitor(
-        |s| {
-            println!("{s}");
-            writeln!(log.borrow_mut(), "{:?} {}", current_time(), s).unwrap();
-        },
-        true,
-    );
+    let monitor = SimpleMonitor::new(|s| {
+        println!("{s}");
+        writeln!(log.borrow_mut(), "{:?} {}", current_time(), s).unwrap();
+    });
 
     let mut mgr = SimpleEventManager::new(monitor);
 
@@ -249,39 +247,50 @@ fn fuzz(
     let mut shmem = shmem_provider.new_shmem(MAP_SIZE).unwrap();
     let shmap_to_drop =
         UnixShMem::shmem_from_id_and_size(shmem.id(), shmem.len()).expect("Failed to reopen map");
-    shmem.write_to_env("__AFL_SHM_ID").unwrap();
-    let shmem_buf = shmem.as_mut_slice();
+    unsafe {
+        shmem.write_to_env("__AFL_SHM_ID").unwrap();
+    }
+    let shmem_buf = shmem.deref_mut();
     std::env::set_var("AFL_MAP_SIZE", format!("{}", MAP_SIZE));
 
     let mut shexit = shmem_provider.new_shmem(0x1000).unwrap();
     let shexit_to_drop =
         UnixShMem::shmem_from_id_and_size(shexit.id(), shexit.len()).expect("Failed to reopen map");
-    shexit.write_to_env("__LIBAFL_EXIT_ID").unwrap();
+    unsafe {
+        shexit.write_to_env("__LIBAFL_EXIT_ID").unwrap();
+    }
 
-    let edges_observer =
-        unsafe { HitcountsMapObserver::new(StdMapObserver::new("shared_mem", shmem_buf)) };
+    let edges_observer = unsafe {
+        HitcountsMapObserver::new(StdMapObserver::new("shared_mem", shmem_buf))
+    };
+
+    let edges_observer = edges_observer.track_indices().track_novelties();
 
     let time_observer = TimeObserver::new("time");
-    let exit_observer = ExitObserver::new("exit", shexit.as_mut_slice());
+    let exit_observer = ExitObserver::new("exit", shexit.deref_mut());
 
-    let map_feedback = MaxMapFeedback::tracking(&edges_observer, true, true);
+    let map_feedback = MaxMapFeedback::new(&edges_observer);
 
     let calibration = CalibrationStage::new(&map_feedback);
-    let minimize = LayeredMinimizerStage::new(&map_feedback);
+    let minimize = LayeredMinimizerStage::new(edges_observer.handle());
     let ladder = LadderStage::new();
 
     let mut feedback = feedback_or!(
         map_feedback,
-        TimeFeedback::with_observer(&time_observer),
+        TimeFeedback::new(&time_observer),
         ExitFeedback::with_observer(&exit_observer)
     );
 
     let mut objective =
         feedback_and_fast!(ConstFeedback::new(!discard_crashes), CrashFeedback::new());
 
-    let mut state = StdState::new(
+    // Help the compiler understand the type soup we're brewing.
+    type InputCorpus = InMemoryOnDiskCorpus<LayeredInput>;
+    type State = StdState<InputCorpus, LayeredInput, StdRand, OnDiskCorpus<LayeredInput>>;
+
+    let mut state: State = StdState::new(
         StdRand::with_seed(current_nanos()),
-        InMemoryOnDiskCorpus::<LayeredInput>::new(corpus_dir).unwrap(),
+        InputCorpus::new(&corpus_dir).unwrap(),
         OnDiskCorpus::new(objective_dir).unwrap(),
         &mut feedback,
         &mut objective,
@@ -295,22 +304,20 @@ fn fuzz(
 
     let cb_ast_mutate = |_fuzzer: &mut _,
                          _executor: &mut _,
-                         state: &mut StdState<_, InMemoryOnDiskCorpus<_>, _, _>,
-                         _event_manager: &mut _,
-                         corpus_id: CorpusId|
+                         state: &mut State,
+                         _event_manager: &mut _|
      -> Result<bool, libafl::Error> {
-        let corpus = state.corpus().get(corpus_id)?.borrow();
-        let input = corpus.input().as_ref().unwrap();
+        let testcase = state.current_testcase()?;
+        let input = testcase.input().as_ref().unwrap();
         Ok(matches!(input, LayeredInput::Ast(_)))
     };
     let cb_ir_mutate = |_fuzzer: &mut _,
                         _executor: &mut _,
-                        state: &mut StdState<_, InMemoryOnDiskCorpus<_>, _, _>,
-                        _event_manager: &mut _,
-                        corpus_id: CorpusId|
+                        state: &mut State,
+                        _event_manager: &mut _|
      -> Result<bool, libafl::Error> {
-        let corpus = state.corpus().get(corpus_id)?.borrow();
-        let input = corpus.input().as_ref().unwrap();
+        let testcase = state.current_testcase()?;
+        let input = testcase.input().as_ref().unwrap();
         Ok(matches!(input, LayeredInput::IR(_)))
     };
     let mutation_stage_ir = StdPowerMutationalStage::new(mutator_ir);
@@ -318,15 +325,18 @@ fn fuzz(
     let maybe_ir_mutate_stage = IfStage::new(cb_ir_mutate, tuple_list!(mutation_stage_ir));
     let maybe_ast_mutate_stage = IfStage::new(cb_ast_mutate, tuple_list!(mutation_stage_ast));
 
-    let scheduler = IndexesLenTimeMinimizerScheduler::new(StdWeightedScheduler::with_schedule(
-        &mut state,
+    let scheduler = IndexesLenTimeMinimizerScheduler::new(
         &edges_observer,
-        Some(PowerSchedule::EXPLOIT),
-    ));
+        StdWeightedScheduler::with_schedule(
+            &mut state,
+            &edges_observer,
+            Some(PowerSchedule::exploit()),
+        ),
+    );
 
     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
-    let forkserver = ForkserverExecutor::builder()
+    let mut executor = ForkserverExecutor::builder()
         .program(executable)
         .env(
             "ASAN_OPTIONS",
@@ -338,23 +348,17 @@ fn fuzz(
         .coverage_map_size(MAP_SIZE)
         .is_persistent(true)
         .is_deferred_frksrv(true)
+        .kill_signal(Signal::SIGKILL)
+        .timeout(timeout)
         .build_dynamic_map(edges_observer, tuple_list!(time_observer, exit_observer))
         .unwrap();
 
-    let shinput_to_drop = forkserver
-        .shmem()
-        .as_ref()
-        .map(|shmem| UnixShMem::shmem_from_id_and_size(shmem.id(), shmem.len()));
-    println!("Coverage map size: {:?}", forkserver.coverage_map_size());
-
-    let mut executor = TimeoutForkserverExecutor::with_signal(forkserver, timeout, Signal::SIGKILL)
-        .expect("Failed to create the executor.");
+    println!("Coverage map size: {:?}", executor.coverage_map_size());
 
     #[allow(clippy::drop_copy)]
     {
         std::mem::drop(shmap_to_drop);
         std::mem::drop(shexit_to_drop);
-        std::mem::drop(shinput_to_drop);
     }
 
     state.add_metadata(dictionary::tokens());

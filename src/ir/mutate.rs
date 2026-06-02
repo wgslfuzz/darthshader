@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+use std::num::NonZeroUsize;
+
 use crate::{
     generator::{FunctionGenCtx, GeneratorConfig, IRGenerator},
     ir::{
@@ -9,8 +12,9 @@ use crate::{
     randomext::RandExt,
 };
 use libafl::{
+    corpus::{CorpusId, HasCurrentCorpusId},
     generators::Generator,
-    prelude::{MutationResult, Mutator},
+    mutators::{MutationResult, Mutator},
     state::{HasCorpus, HasRand},
     Error,
 };
@@ -101,21 +105,17 @@ const _: () = assert!(
 );
 
 impl Named for BinOpMutator {
-    fn name(&self) -> &str {
-        "IRBinOpMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRBinOPMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for BinOpMutator
+impl<S> Mutator<LayeredInput, S> for BinOpMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -129,7 +129,7 @@ where
         {
             if let Expression::Binary { op, .. } = expr {
                 num_binary += 1;
-                if rng.gen_ratio(1, num_binary) {
+                if rng.random_ratio(1, num_binary) {
                     target = Some(op);
                 }
             }
@@ -144,12 +144,16 @@ where
             Self::BINOPS.len() + Self::BOOLOPS.len()
         );
         if Self::BOOLOPS.contains(op) {
-            *op = *state.rand_mut().choose(&Self::BOOLOPS);
+            *op = *state.rand_mut().choose(&Self::BOOLOPS).unwrap();
         } else {
-            *op = *state.rand_mut().choose(&Self::BINOPS);
+            *op = *state.rand_mut().choose(&Self::BINOPS).unwrap();
         }
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -237,21 +241,17 @@ impl MathFuncMutator {
 }
 
 impl Named for MathFuncMutator {
-    fn name(&self) -> &str {
-        "IRMathFuncMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRMathFuncMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for MathFuncMutator
+impl<S> Mutator<LayeredInput, S> for MathFuncMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -265,7 +265,7 @@ where
         {
             if let Expression::Math { fun, .. } = expr {
                 num_math += 1;
-                if rng.gen_ratio(1, num_math) {
+                if rng.random_ratio(1, num_math) {
                     target = Some(fun);
                 }
             }
@@ -280,8 +280,12 @@ where
             Self::MATHFUNCS.len() + 1
         );
 
-        *fun = *state.rand_mut().choose(&Self::MATHFUNCS);
+        *fun = *state.rand_mut().choose(&Self::MATHFUNCS).unwrap();
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -297,21 +301,17 @@ impl UnaryOpMutator {
 }
 
 impl Named for UnaryOpMutator {
-    fn name(&self) -> &str {
-        "IRUnaryOpMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRUnaryOpMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for UnaryOpMutator
+impl<S> Mutator<LayeredInput, S> for UnaryOpMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -325,7 +325,7 @@ where
         {
             if let Expression::Unary { op, .. } = expr {
                 num_unary += 1;
-                if rng.gen_ratio(1, num_unary) {
+                if rng.random_ratio(1, num_unary) {
                     target = Some(op);
                 }
             }
@@ -339,8 +339,12 @@ where
         let unaryops = &[Uo::Negate, Uo::BitwiseNot, Uo::LogicalNot];
         assert_eq!(std::mem::variant_count::<Uo>(), unaryops.len());
 
-        *op = *state.rand_mut().choose(unaryops.iter());
+        *op = *state.rand_mut().choose(unaryops.iter()).unwrap();
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -369,21 +373,17 @@ impl LiteralMutator {
 }
 
 impl Named for LiteralMutator {
-    fn name(&self) -> &str {
-        "IRLiteralMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRLiteralMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for LiteralMutator
+impl<S> Mutator<LayeredInput, S> for LiteralMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -397,7 +397,7 @@ where
         {
             if let Expression::Literal(l) = expr {
                 num_literals += 1;
-                if rng.gen_ratio(1, num_literals) {
+                if rng.random_ratio(1, num_literals) {
                     target = Some(l);
                 }
             }
@@ -409,6 +409,10 @@ where
 
         *literal = Self::random_literal(literal, state.rand_mut());
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -502,25 +506,22 @@ impl RewireExpressionMutator {
 }
 
 impl Named for RewireExpressionMutator {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Cow<'static, str> {
         if self.typed {
-            "IRRewireExpressionMutator (typed)"
+            const NAME: Cow<'static, str> = Cow::Borrowed("IRRewireExpressionMutator (typed)");
+            &NAME
         } else {
-            "IRRewireExpressionMutator (untyped)"
+            const NAME: Cow<'static, str> = Cow::Borrowed("IRRewireExpressionMutator (untyped)");
+            &NAME
         }
     }
 }
 
-impl<S> Mutator<S::Input, S> for RewireExpressionMutator
+impl<S> Mutator<LayeredInput, S> for RewireExpressionMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -610,6 +611,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -626,25 +631,22 @@ impl RewireStatementMutator {
 }
 
 impl Named for RewireStatementMutator {
-    fn name(&self) -> &str {
+    fn name(&self) -> &Cow<'static, str> {
         if self.typed {
-            "IRRewireStatementMutator (typed)"
+            const NAME: Cow<'static, str> = Cow::Borrowed("IRRewireStatementMutator (typed)");
+            &NAME
         } else {
-            "IRStatementInputMutator (untyped)"
+            const NAME: Cow<'static, str> = Cow::Borrowed("IRStatementInputMutator (untyped)");
+            &NAME
         }
     }
 }
 
-impl<S> Mutator<S::Input, S> for RewireStatementMutator
+impl<S> Mutator<LayeredInput, S> for RewireStatementMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -679,7 +681,7 @@ where
                     continue;
                 }
                 stmts_with_inputs += 1;
-                if rng.gen_ratio(1, stmts_with_inputs) {
+                if rng.random_ratio(1, stmts_with_inputs) {
                     target = Some(stmt as *const Statement);
                     input_idx = Some(idx);
                     input_handle = Some(handle);
@@ -742,6 +744,10 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -756,21 +762,17 @@ impl StatementMutator {
 }
 
 impl Named for StatementMutator {
-    fn name(&self) -> &str {
-        "IRStatementMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRStatementMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for StatementMutator
+impl<S> Mutator<LayeredInput, S> for StatementMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -852,6 +854,9 @@ where
         if available_exprs.is_empty() {
             return Ok(MutationResult::Skipped);
         }
+
+        let choose_expr = |state: &mut S| state.rand_mut().choose(available_exprs).unwrap();
+
         let target_stmt = target_stmt as *const Statement;
 
         let mut blocks = Vec::new();
@@ -875,18 +880,18 @@ where
                             accept,
                             reject,
                         } => {
-                            if state.rand_mut().below(2) == 0 {
-                                *condition = state.rand_mut().choose(available_exprs);
+                            if state.rand_mut().below_or_zero(2) == 0 {
+                                *condition = choose_expr(state);
                             } else {
                                 std::mem::swap(accept, reject);
                             }
                         }
                         Statement::Switch { selector, cases } => {
                             if state.rand_mut().probability(0.5) || cases.is_empty() {
-                                *selector = state.rand_mut().choose(available_exprs);
+                                *selector = choose_expr(state);
                             } else {
-                                let case = state.rand_mut().choose(cases);
-                                case.fall_through = state.rand_mut().below(2) == 0;
+                                let case = state.rand_mut().choose(cases).unwrap();
+                                case.fall_through = state.rand_mut().below_or_zero(2) == 0;
                                 match case.value {
                                     naga::SwitchValue::I32(ref mut v) => {
                                         *v = state.rand_mut().random_i32()
@@ -898,42 +903,46 @@ where
                                 }
                             }
                         }
-                        Statement::Loop { break_if, .. } => match state.rand_mut().below(2) {
+                        Statement::Loop { break_if, .. } => match state.rand_mut().below_or_zero(2)
+                        {
                             0 => *break_if = None,
-                            1 => *break_if = Some(state.rand_mut().choose(available_exprs)),
+                            1 => *break_if = Some(choose_expr(state)),
                             _ => unreachable!(),
                         },
                         Statement::Return { value } => {
-                            *value = Some(state.rand_mut().choose(available_exprs));
+                            *value = Some(choose_expr(state));
                         }
                         Statement::Barrier(b) => {
                             *b = state
                                 .rand_mut()
-                                .choose([Barrier::STORAGE, Barrier::WORK_GROUP]);
+                                .choose([Barrier::STORAGE, Barrier::WORK_GROUP])
+                                .unwrap();
                         }
-                        Statement::Store { pointer, value } => match state.rand_mut().below(2) {
-                            0 => *pointer = state.rand_mut().choose(available_exprs),
-                            1 => *value = state.rand_mut().choose(available_exprs),
-                            _ => unreachable!(),
-                        },
+                        Statement::Store { pointer, value } => {
+                            match state.rand_mut().below_or_zero(2) {
+                                0 => *pointer = choose_expr(state),
+                                1 => *value = choose_expr(state),
+                                _ => unreachable!(),
+                            }
+                        }
                         Statement::ImageStore {
                             image,
                             coordinate,
                             array_index,
                             value,
-                        } => match state.rand_mut().below(4) {
-                            0 => *image = state.rand_mut().choose(available_exprs),
-                            1 => *coordinate = state.rand_mut().choose(available_exprs),
+                        } => match state.rand_mut().below_or_zero(4) {
+                            0 => *image = choose_expr(state),
+                            1 => *coordinate = choose_expr(state),
                             2 => {
-                                *array_index = Some(state.rand_mut().choose(available_exprs));
+                                *array_index = Some(choose_expr(state));
                             }
-                            3 => *value = state.rand_mut().choose(available_exprs),
+                            3 => *value = choose_expr(state),
                             _ => unimplemented!(),
                         },
                         Statement::Block(b) => {
-                            if !b.is_empty() {
-                                if state.rand_mut().below(2) == 0 {
-                                    let del_idx = state.rand_mut().below(b.len() as u64) as usize;
+                            if let Some(len) = NonZeroUsize::new(b.len()) {
+                                if state.rand_mut().below_or_zero(2) == 0 {
+                                    let del_idx = state.rand_mut().below(len) as usize;
                                     b.cull(del_idx..=del_idx);
                                 } else {
                                     let mut stmts: Vec<Statement> = b.iter().cloned().collect();
@@ -957,10 +966,10 @@ where
                                 AtomicFunction::Min,
                                 AtomicFunction::Max,
                                 AtomicFunction::Exchange {
-                                    compare: Some(state.rand_mut().choose(available_exprs)),
+                                    compare: Some(choose_expr(state)),
                                 },
                             ];
-                            *fun = state.rand_mut().choose(from);
+                            *fun = state.rand_mut().choose(from).unwrap();
                         }
                     }
                     break 'outer;
@@ -993,6 +1002,10 @@ where
         assert!(func.validate_dag().is_ok());
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -1015,6 +1028,7 @@ impl TypeMutator {
             ScalarKind::Sint,
             ScalarKind::Uint,
         ])
+        .unwrap()
     }
 
     fn random_vector_size<R>(r: &mut R) -> VectorSize
@@ -1022,16 +1036,17 @@ impl TypeMutator {
         R: Rand,
     {
         r.choose([VectorSize::Bi, VectorSize::Tri, VectorSize::Quad])
+            .unwrap()
     }
 
     fn random_array_size<R>(r: &mut R) -> ArraySize
     where
         R: Rand,
     {
-        if r.below(10) == 0 {
+        if r.below_or_zero(10) == 0 {
             ArraySize::Dynamic
         } else {
-            let r = r.below(u16::MAX as u64) + 1;
+            let r = r.below_or_zero(u16::MAX as usize) + 1;
             let r = std::num::NonZeroU32::new(r as u32).unwrap();
             ArraySize::Constant(r)
         }
@@ -1055,6 +1070,7 @@ impl TypeMutator {
             AddressSpace::Handle,
             AddressSpace::PushConstant,
         ])
+        .unwrap()
     }
 
     fn random_image_dimension<R>(r: &mut R) -> ImageDimension
@@ -1067,6 +1083,7 @@ impl TypeMutator {
             ImageDimension::D3,
             ImageDimension::Cube,
         ])
+        .unwrap()
     }
 
     fn random_builtin<R>(r: &mut R) -> BuiltIn
@@ -1090,25 +1107,22 @@ impl TypeMutator {
             BuiltIn::WorkGroupId,
             BuiltIn::NumWorkGroups,
         ])
+        .unwrap()
     }
 }
 
 impl Named for TypeMutator {
-    fn name(&self) -> &str {
-        "IRTypeMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRTypeMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for TypeMutator
+impl<S> Mutator<LayeredInput, S> for TypeMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -1129,7 +1143,7 @@ where
             return Ok(MutationResult::Skipped);
         }
 
-        let type_handle = *state.rand_mut().choose(&types);
+        let type_handle = *state.rand_mut().choose(&types).unwrap();
         let ir_type = module.types.get_handle(type_handle).unwrap().clone();
 
         use naga::TypeInner as Ti;
@@ -1144,7 +1158,7 @@ where
                 columns,
                 rows,
                 width,
-            } => match state.rand_mut().below(3) {
+            } => match state.rand_mut().below_or_zero(3) {
                 0 => {
                     let columns = Self::random_vector_size(state.rand_mut());
                     Ti::Matrix {
@@ -1173,7 +1187,7 @@ where
                     unreachable!()
                 }
             },
-            Ti::Atomic { kind, width } => match state.rand_mut().below(2) {
+            Ti::Atomic { kind, width } => match state.rand_mut().below_or_zero(2) {
                 0 => {
                     let kind = Self::random_scalar_kind(state.rand_mut());
                     Ti::Atomic { kind, width }
@@ -1186,9 +1200,9 @@ where
                     unreachable!()
                 }
             },
-            Ti::Pointer { base, space } => match state.rand_mut().below(2) {
+            Ti::Pointer { base, space } => match state.rand_mut().below_or_zero(2) {
                 0 => {
-                    let base = *state.rand_mut().choose(&types);
+                    let base = *state.rand_mut().choose(&types).unwrap();
                     Ti::Pointer { base, space }
                 }
                 1 => {
@@ -1204,16 +1218,17 @@ where
                 kind,
                 width,
                 space,
-            } => match state.rand_mut().below(4) {
+            } => match state.rand_mut().below_or_zero(4) {
                 0 => {
-                    let mut size = Some(Self::random_vector_size(state.rand_mut()));
-                    if state
+                    let size = if state
                         .rand_mut()
-                        .below(std::mem::variant_count::<VectorSize>() as u64 + 1)
+                        .below_or_zero(std::mem::variant_count::<VectorSize>() + 1)
                         == 0
                     {
-                        size = None;
-                    }
+                        None
+                    } else {
+                        Some(Self::random_vector_size(state.rand_mut()))
+                    };
                     Ti::ValuePointer {
                         size,
                         kind,
@@ -1252,9 +1267,9 @@ where
                     unreachable!()
                 }
             },
-            Ti::Array { base, size, stride } => match state.rand_mut().below(3) {
+            Ti::Array { base, size, stride } => match state.rand_mut().below_or_zero(3) {
                 0 => {
-                    let base = *state.rand_mut().choose(&types);
+                    let base = *state.rand_mut().choose(&types).unwrap();
                     Ti::Array { base, size, stride }
                 }
                 1 => {
@@ -1280,14 +1295,14 @@ where
                     ty,
                     binding,
                     offset: _,
-                } = state.rand_mut().choose(&mut members);
+                } = state.rand_mut().choose(&mut members).unwrap();
 
-                match state.rand_mut().below(2) {
+                match state.rand_mut().below_or_zero(2) {
                     0 => {
-                        *ty = *state.rand_mut().choose(&types);
+                        *ty = *state.rand_mut().choose(&types).unwrap();
                     }
                     1 => {
-                        *binding = match state.rand_mut().below(3) {
+                        *binding = match state.rand_mut().below_or_zero(3) {
                             0 => None,
                             1 => Some(Binding::BuiltIn(Self::random_builtin(state.rand_mut()))),
                             2 => Some(Binding::Location {
@@ -1311,7 +1326,7 @@ where
                 dim,
                 arrayed,
                 class,
-            } => match state.rand_mut().below(3) {
+            } => match state.rand_mut().below_or_zero(3) {
                 0 => {
                     let dim = Self::random_image_dimension(state.rand_mut());
                     Ti::Image {
@@ -1341,9 +1356,9 @@ where
                 let comparison = !comparison;
                 Ti::Sampler { comparison }
             }
-            Ti::BindingArray { base, size } => match state.rand_mut().below(2) {
+            Ti::BindingArray { base, size } => match state.rand_mut().below_or_zero(2) {
                 0 => {
-                    let base = *state.rand_mut().choose(&types);
+                    let base = *state.rand_mut().choose(&types).unwrap();
                     Ti::BindingArray { base, size }
                 }
                 1 => {
@@ -1368,11 +1383,16 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 pub struct FullGenerationMutation {
     generator: IRGenerator,
+    last_corpus_id: Option<CorpusId>,
 }
 
 impl FullGenerationMutation {
@@ -1381,29 +1401,33 @@ impl FullGenerationMutation {
     pub fn new() -> Self {
         Self {
             generator: IRGenerator::new(Default::default()),
+            last_corpus_id: None,
         }
     }
 }
 
 impl Named for FullGenerationMutation {
-    fn name(&self) -> &str {
-        "IRFullGenerationMutation"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRFullGenerationMutation");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for FullGenerationMutation
+impl<S> Mutator<LayeredInput, S> for FullGenerationMutation
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput> + HasCurrentCorpusId,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
-        if stage_idx > 0 {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
+        // Don't apply this mutation more than once in a row to the same corpus
+        // sample, since it fully regenerates the input.
+        let current_corpus_id = state
+            .current_corpus_id()?
+            .ok_or_else(|| Error::key_not_found("FullGenerationMutation: missing corpus idx"))?;
+        if self.last_corpus_id == Some(current_corpus_id) {
             return Ok(MutationResult::Skipped);
         }
+
+        self.last_corpus_id = Some(current_corpus_id);
 
         let result = self.generator.generate(state)?;
         if matches!(result, LayeredInput::IR(..)) {
@@ -1412,6 +1436,10 @@ where
         } else {
             Ok(MutationResult::Skipped)
         }
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -1431,21 +1459,17 @@ impl CodeGenerationMutation {
 }
 
 impl Named for CodeGenerationMutation {
-    fn name(&self) -> &str {
-        "IRCodeGenerationMutation"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRCodeGenerationMutation");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for CodeGenerationMutation
+impl<S> Mutator<LayeredInput, S> for CodeGenerationMutation
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -1460,7 +1484,7 @@ where
         let mut target = None;
         let block_chooser = |block: &Block| {
             blocks += 1;
-            if rng.gen_ratio(1, blocks) {
+            if rng.random_ratio(1, blocks) {
                 target = Some(block as *const Block);
             }
             true
@@ -1475,5 +1499,9 @@ where
         assert!(func.validate_dag().is_ok());
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }

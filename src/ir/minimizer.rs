@@ -1,4 +1,8 @@
+use std::borrow::Cow;
+use std::num::NonZeroUsize;
+
 use libafl::{
+    corpus::CorpusId,
     mutators::{MutationResult, Mutator},
     state::{HasCorpus, HasRand},
 };
@@ -69,33 +73,34 @@ impl EntryPointDeleteMutator {
 }
 
 impl Named for EntryPointDeleteMutator {
-    fn name(&self) -> &str {
-        "IREntryPointDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IREntryPointDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for EntryPointDeleteMutator
+impl<S> Mutator<LayeredInput, S> for EntryPointDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
 
         let eps = &mut ir.get_module_mut().entry_points;
-        if eps.is_empty() {
+        let Some(eps_len) = NonZeroUsize::new(eps.len()) else {
             return Ok(MutationResult::Skipped);
-        }
-        let idx = state.rand_mut().below(eps.len() as u64) as usize;
+        };
+
+        let idx = state.rand_mut().below(eps_len);
         eps.remove(idx);
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }
 
@@ -111,21 +116,17 @@ impl FunctionDeleteMutator {
 }
 
 impl Named for FunctionDeleteMutator {
-    fn name(&self) -> &str {
-        "IRFunctionDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRFunctionDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for FunctionDeleteMutator
+impl<S> Mutator<LayeredInput, S> for FunctionDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -196,6 +197,10 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -210,21 +215,17 @@ impl LocalVarDeleteMutator {
 }
 
 impl Named for LocalVarDeleteMutator {
-    fn name(&self) -> &str {
-        "IRLocalVarDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRLocalVarDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for LocalVarDeleteMutator
+impl<S> Mutator<LayeredInput, S> for LocalVarDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -280,6 +281,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -294,21 +299,17 @@ impl GlobalDeleteMutator {
 }
 
 impl Named for GlobalDeleteMutator {
-    fn name(&self) -> &str {
-        "IRGlobalDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRGlobalDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for GlobalDeleteMutator
+impl<S> Mutator<LayeredInput, S> for GlobalDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -360,6 +361,10 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -374,21 +379,17 @@ impl ResultDeleteMutator {
 }
 
 impl Named for ResultDeleteMutator {
-    fn name(&self) -> &str {
-        "IRResultDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRResultDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ResultDeleteMutator
+impl<S> Mutator<LayeredInput, S> for ResultDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         enum ResultStatement {
             Call(Handle<Function>, Option<Handle<Expression>>),
             Atomic(Handle<Expression>),
@@ -404,7 +405,7 @@ where
         funcs.shuffle(&mut rng);
         for fid in funcs.into_iter() {
             let func = ir.get_func_mut(fid);
-            let mut results = 0u32;
+            let mut results = 0;
             let count_results = |stmt: &Statement| {
                 if matches!(
                     stmt,
@@ -418,8 +419,8 @@ where
             };
             func.visit_statements(count_results);
 
-            if results > 0 {
-                let mut countdown = rng.below(results as u64);
+            if let Some(results) = NonZeroUsize::new(results) {
+                let mut countdown = rng.below(results);
                 let mut result_stmt = None;
 
                 let replace_result = |block: &mut Block| {
@@ -491,6 +492,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -505,21 +510,17 @@ impl BlockSimplifyMutator {
 }
 
 impl Named for BlockSimplifyMutator {
-    fn name(&self) -> &str {
-        "IRBlockSimplifyMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRBlockSimplifyMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for BlockSimplifyMutator
+impl<S> Mutator<LayeredInput, S> for BlockSimplifyMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -529,7 +530,7 @@ where
         funcs.shuffle(&mut rng);
         for fid in funcs.into_iter() {
             let func = ir.get_func_mut(fid);
-            let mut blocks = 0u32;
+            let mut blocks = 0;
             let count_blocks = |stmt: &Statement| {
                 if matches!(stmt, Statement::Block { .. }) {
                     blocks += 1;
@@ -538,8 +539,8 @@ where
             };
             func.visit_statements(count_blocks);
 
-            if blocks > 0 {
-                let mut countdown = rng.below(blocks as u64);
+            if let Some(blocks) = NonZeroUsize::new(blocks) {
+                let mut countdown = rng.below(blocks);
                 let outline_block = |block: &mut Block| {
                     for (idx, stmt) in block.iter_mut().enumerate() {
                         if let Statement::Block(inner_block) = stmt {
@@ -561,6 +562,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -575,21 +580,17 @@ impl IfSimplifyMutator {
 }
 
 impl Named for IfSimplifyMutator {
-    fn name(&self) -> &str {
-        "IRIfSimplifyMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRIfSimplifyMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for IfSimplifyMutator
+impl<S> Mutator<LayeredInput, S> for IfSimplifyMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -599,7 +600,7 @@ where
         funcs.shuffle(&mut rng);
         for fid in funcs.into_iter() {
             let func = ir.get_func_mut(fid);
-            let mut ifs = 0u32;
+            let mut ifs = 0;
             let count_ifs = |stmt: &Statement| {
                 if matches!(stmt, Statement::If { .. }) {
                     ifs += 1;
@@ -608,8 +609,8 @@ where
             };
             func.visit_statements(count_ifs);
 
-            if ifs > 0 {
-                let mut countdown = rng.below(ifs as u64);
+            if let Some(ifs) = NonZeroUsize::new(ifs) {
+                let mut countdown = rng.below(ifs);
                 let replace_if = |block: &mut Block| {
                     for (idx, stmt) in block.iter_mut().enumerate() {
                         if let Statement::If { accept, reject, .. } = stmt {
@@ -635,6 +636,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -649,21 +654,17 @@ impl SwitchSimplifyMutator {
 }
 
 impl Named for SwitchSimplifyMutator {
-    fn name(&self) -> &str {
-        "IRSwitchSimplifyMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRSwitchSimplifyMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for SwitchSimplifyMutator
+impl<S> Mutator<LayeredInput, S> for SwitchSimplifyMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -673,7 +674,7 @@ where
         funcs.shuffle(&mut rng);
         for fid in funcs.into_iter() {
             let func = ir.get_func_mut(fid);
-            let mut switches = 0u32;
+            let mut switches = 0;
             let count_switches = |stmt: &Statement| {
                 if matches!(stmt, Statement::Switch { .. }) {
                     switches += 1;
@@ -683,16 +684,16 @@ where
             func.visit_statements(count_switches);
 
             let mut result = MutationResult::Skipped;
-            if switches > 0 {
-                let mut countdown = rng.below(switches as u64);
+            if let Some(switches) = NonZeroUsize::new(switches) {
+                let mut countdown = rng.below(switches);
                 let simplify_switch = |block: &mut Block| {
                     for stmt in block.iter_mut() {
                         if let Statement::Switch { cases, .. } = stmt {
                             if countdown == 0 {
-                                if cases.is_empty() {
+                                let Some(cases_len) = NonZeroUsize::new(cases.len()) else {
                                     return false;
-                                }
-                                let case_idx = rng.below(cases.len() as u64) as usize;
+                                };
+                                let case_idx = rng.below(cases_len);
                                 let _ = cases.remove(case_idx);
                                 result = MutationResult::Mutated;
                                 return false;
@@ -711,6 +712,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -725,21 +730,17 @@ impl ExpressionDeleteMutator {
 }
 
 impl Named for ExpressionDeleteMutator {
-    fn name(&self) -> &str {
-        "IRExpressionDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRExpressionDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ExpressionDeleteMutator
+impl<S> Mutator<LayeredInput, S> for ExpressionDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -865,6 +866,10 @@ where
 
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -879,21 +884,17 @@ impl DuplicateDeleteMutator {
 }
 
 impl Named for DuplicateDeleteMutator {
-    fn name(&self) -> &str {
-        "IRDuplicateDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRDuplicateDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for DuplicateDeleteMutator
+impl<S> Mutator<LayeredInput, S> for DuplicateDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -980,6 +981,10 @@ where
         }
         Ok(MutationResult::Skipped)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -994,21 +999,17 @@ impl ConstExpressionDeleteMutator {
 }
 
 impl Named for ConstExpressionDeleteMutator {
-    fn name(&self) -> &str {
-        "IRConstExpressionDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRConstExpressionDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for ConstExpressionDeleteMutator
+impl<S> Mutator<LayeredInput, S> for ConstExpressionDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -1101,6 +1102,10 @@ where
 
         Ok(MutationResult::Mutated)
     }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug)]
@@ -1115,21 +1120,17 @@ impl StatementDeleteMutator {
 }
 
 impl Named for StatementDeleteMutator {
-    fn name(&self) -> &str {
-        "IRStatementDeleteMutator"
+    fn name(&self) -> &Cow<'static, str> {
+        const NAME: Cow<'static, str> = Cow::Borrowed("IRStatementDeleteMutator");
+        &NAME
     }
 }
 
-impl<S> Mutator<S::Input, S> for StatementDeleteMutator
+impl<S> Mutator<LayeredInput, S> for StatementDeleteMutator
 where
-    S: HasRand + HasCorpus<Input = LayeredInput>,
+    S: HasRand + HasCorpus<LayeredInput>,
 {
-    fn mutate(
-        &mut self,
-        state: &mut S,
-        input: &mut LayeredInput,
-        _stage_idx: i32,
-    ) -> Result<MutationResult, Error> {
+    fn mutate(&mut self, state: &mut S, input: &mut LayeredInput) -> Result<MutationResult, Error> {
         let LayeredInput::IR(ir) = input else {
             return Ok(MutationResult::Skipped);
         };
@@ -1148,7 +1149,7 @@ where
         let mut funcs: Vec<_> = ir.iter_funcs_mut().map(|(_, func)| func).collect();
         funcs.shuffle(&mut rng);
         for func in funcs.into_iter() {
-            let mut results = 0u32;
+            let mut results = 0;
             let count_results = |stmt: &Statement| {
                 if allowed_stmt(stmt) {
                     results += 1;
@@ -1157,8 +1158,8 @@ where
             };
             func.visit_statements(count_results);
 
-            if results > 0 {
-                let mut countdown = rng.below(results as u64);
+            if let Some(results) = NonZeroUsize::new(results) {
+                let mut countdown = rng.below(results);
 
                 let remove_stmt = |block: &mut Block| {
                     for (idx, stmt) in block.iter().enumerate() {
@@ -1179,5 +1180,9 @@ where
         }
 
         Ok(MutationResult::Mutated)
+    }
+
+    fn post_exec(&mut self, _state: &mut S, _new_corpus_id: Option<CorpusId>) -> Result<(), Error> {
+        Ok(())
     }
 }

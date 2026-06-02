@@ -1,26 +1,23 @@
 use core::{fmt::Debug, marker::PhantomData};
 
 use libafl_bolts::{
-    tuples::{HasConstLen, NamedTuple},
-    AsIter, AsSlice, HasLen, Named,
+    tuples::{Handle, MatchNameRef, NamedTuple},
+    AsSlice, HasLen,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use libafl::{
-    corpus::{Corpus, CorpusId},
+    common::{HasMetadata, HasNamedMetadata},
+    corpus::HasCurrentCorpusId,
     events::{EventFirer, LogSeverity},
     executors::{Executor, ExitKind, HasObservers},
-    feedbacks::HasObserverName,
+    feedbacks::map::MapNoveltiesMetadata,
     fuzzer::Evaluator,
-    inputs::UsesInput,
-    mutators::MutatorsTuple,
-    observers::{MapObserver, ObserversTuple, UsesObserver},
-    prelude::{MapNoveltiesMetadata, MutationResult, Mutator},
-    stages::Stage,
-    state::{
-        HasClientPerfMonitor, HasCorpus, HasMetadata, HasNamedMetadata, HasRand, State, UsesState,
-    },
+    mutators::{MutationResult, Mutator, MutatorsTuple},
+    observers::{MapObserver, ObserversTuple},
+    stages::{Restartable, Stage},
+    state::{HasClientPerfMonitor, HasCorpus, HasCurrentTestcase, HasExecutions, HasRand},
     Error,
 };
 
@@ -32,16 +29,31 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub struct LayeredMinimizerStage<O, OT, S> {
-    map_observer_name: String,
-    stage_max: usize,
-    phantom: PhantomData<(O, OT, S)>,
+pub struct LayeredMinimizerStage<O, MO, OT, S> {
+    map_observer_handle: Handle<O>,
+    phantom: PhantomData<(MO, OT, S)>,
 }
 
-impl<O, OT, S> LayeredMinimizerStage<O, OT, S> {
+impl<O, MO, OT, S> LayeredMinimizerStage<O, MO, OT, S> {
+    /// Create a new [`LayeredMinimizerStage`].
+    #[must_use]
+    pub fn new(map_observer_handle: Handle<O>) -> Self {
+        Self {
+            map_observer_handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<O, MO, OT, S> LayeredMinimizerStage<O, MO, OT, S>
+where
+    O: AsRef<MO>,
+    MO: MapObserver,
+    OT: MatchNameRef,
+{
     fn minimize_ir(&self, state: &mut S, input: &LayeredInput) -> Option<LayeredInput>
     where
-        S: HasRand + HasCorpus<Input = LayeredInput>,
+        S: HasRand + HasCorpus<LayeredInput>,
     {
         let mut minimizers = ir_minimizers();
         let mut idxs: Vec<_> = (0..minimizers.len()).collect();
@@ -50,7 +62,7 @@ impl<O, OT, S> LayeredMinimizerStage<O, OT, S> {
 
         for rand_idx in idxs {
             let result = minimizers
-                .get_and_mutate(rand_idx.into(), state, &mut input, 0)
+                .get_and_mutate(rand_idx.into(), state, &mut input)
                 .ok()?;
 
             if matches!(result, MutationResult::Mutated) {
@@ -75,40 +87,51 @@ impl<O, OT, S> LayeredMinimizerStage<O, OT, S> {
 
     fn minimize_ast(&self, state: &mut S, input: &LayeredInput) -> Option<LayeredInput>
     where
-        S: HasRand + HasCorpus<Input = LayeredInput>,
+        S: HasRand + HasCorpus<LayeredInput>,
     {
         let mut mutator = ASTDeleteMutator::new();
         let mut input = input.clone();
-        match mutator.mutate(state, &mut input, 0) {
+        match mutator.mutate(state, &mut input) {
             Ok(MutationResult::Mutated) => Some(input),
             _ => None,
         }
+    }
+
+    fn clone_map<E>(&self, executor: &E) -> Result<Vec<<MO as MapObserver>::Entry>, Error>
+    where
+        E: HasObservers<Observers = OT>,
+    {
+        let observers = executor.observers();
+        let Some(observer) = observers.get(&self.map_observer_handle) else {
+            return Err(Error::key_not_found(format!(
+                "Observer not found: {:?}",
+                &self.map_observer_handle
+            )));
+        };
+
+        Ok(observer.as_ref().to_vec())
     }
 }
 
 const CAL_STAGE_START: usize = 4;
 const CAL_STAGE_MAX: usize = 8;
 
-impl<O, OT, S> UsesState for LayeredMinimizerStage<O, OT, S>
+impl<E, EM, O, MO, OT, S, Z> Stage<E, EM, S, Z> for LayeredMinimizerStage<O, MO, OT, S>
 where
-    S: UsesInput + State,
-{
-    type State = S;
-}
-
-impl<E, EM, O, OT, Z> Stage<E, EM, Z> for LayeredMinimizerStage<O, OT, E::State>
-where
-    E: Executor<EM, Z> + HasObservers<Observers = OT>,
-    EM: EventFirer<State = E::State>,
-    O: MapObserver,
-    for<'de> <O as MapObserver>::Entry: Serialize + Deserialize<'de> + 'static,
-    OT: ObserversTuple<E::State>,
-    E::State: HasCorpus<Input = LayeredInput>
+    E: Executor<EM, LayeredInput, S, Z> + HasObservers<Observers = OT>,
+    EM: EventFirer<LayeredInput, S>,
+    O: AsRef<MO>,
+    MO: MapObserver,
+    for<'de> <MO as MapObserver>::Entry: Serialize + Deserialize<'de> + 'static,
+    OT: ObserversTuple<LayeredInput, S>,
+    S: HasCorpus<LayeredInput>
         + HasMetadata
+        + HasCurrentCorpusId
         + HasClientPerfMonitor
+        + HasExecutions
         + HasNamedMetadata
         + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
+    Z: Evaluator<E, EM, LayeredInput, S>,
 {
     #[inline]
     #[allow(
@@ -120,19 +143,16 @@ where
         &mut self,
         fuzzer: &mut Z,
         executor: &mut E,
-        state: &mut E::State,
+        state: &mut S,
         mgr: &mut EM,
-        corpus_idx: CorpusId,
     ) -> Result<(), Error> {
-        let entry = state.corpus().get(corpus_idx)?.borrow();
-        if entry.scheduled_count() > 0 {
+        if state.current_testcase()?.scheduled_count() > 0 {
             return Ok(());
         }
-        drop(entry);
 
-        let mut iter = self.stage_max;
+        let mut iter = CAL_STAGE_START;
 
-        let input = state.corpus().cloned_input_for_id(corpus_idx)?;
+        let input = state.current_input_cloned()?;
 
         executor.observers_mut().pre_exec_all(state, &input)?;
 
@@ -142,19 +162,13 @@ where
             .observers_mut()
             .post_exec_all(state, &input, &exit_kind)?;
 
-        let map_first = &executor
-            .observers()
-            .match_name::<O>(&self.map_observer_name)
-            .ok_or_else(|| Error::key_not_found("MapObserver not found".to_string()))?
-            .to_vec();
+        let map_first = self.clone_map(executor)?;
 
         let mut unstable_entries = HashSet::new();
         let mut i = 1;
         let mut has_errors = false;
 
         while i < iter {
-            let input = state.corpus().cloned_input_for_id(corpus_idx)?;
-
             executor.observers_mut().pre_exec_all(state, &input)?;
 
             let exit_kind = executor.run_target(fuzzer, state, mgr, &input)?;
@@ -175,13 +189,9 @@ where
                 .observers_mut()
                 .post_exec_all(state, &input, &exit_kind)?;
 
-            let map = &executor
-                .observers()
-                .match_name::<O>(&self.map_observer_name)
-                .ok_or_else(|| Error::key_not_found("MapObserver not found".to_string()))?
-                .to_vec();
+            let map = self.clone_map(executor)?;
 
-            for (idx, (first, cur)) in map_first.iter().zip(map).enumerate() {
+            for (idx, (first, cur)) in map_first.iter().zip(map.iter()).enumerate() {
                 if *first != *cur {
                     unstable_entries.insert(idx);
                 };
@@ -194,8 +204,8 @@ where
         }
 
         let novelties: HashSet<usize> = {
-            let entry = state.corpus().get(corpus_idx)?.borrow_mut();
-            let novelties = entry
+            let testcase = state.current_testcase()?;
+            let novelties = testcase
                 .metadata_map()
                 .get::<MapNoveltiesMetadata>()
                 .expect("check arguments of MapFeedback::new");
@@ -206,13 +216,13 @@ where
         stable_novelties.sort();
         println!(
             "{} has {} unstable entries, {} stable entries",
-            corpus_idx,
+            state.current_corpus_id().unwrap().unwrap(),
             unstable_entries.len(),
             stable_novelties.len()
         );
 
         let mut iter = 100;
-        let mut smallest = state.corpus().cloned_input_for_id(corpus_idx)?;
+        let mut smallest = state.current_input_cloned()?;
         let mut smallest_size = smallest.len();
         'retry: while iter > 0 {
             iter -= 1;
@@ -236,11 +246,7 @@ where
                 .observers_mut()
                 .post_exec_all(state, &mutated, &exit_kind)?;
 
-            let map = &executor
-                .observers()
-                .match_name::<O>(&self.map_observer_name)
-                .ok_or_else(|| Error::key_not_found("MapObserver not found".to_string()))?
-                .to_vec();
+            let map = self.clone_map(executor)?;
 
             for &idx in stable_novelties.iter() {
                 if map[idx] != map_first[idx] {
@@ -272,30 +278,24 @@ where
             }
         }
 
-        let mut entry = state.corpus().get(corpus_idx)?.borrow_mut();
+        let mut entry = state.current_testcase_mut()?;
         entry.set_input(smallest);
 
         Ok(())
     }
 }
 
-impl<O, OT, S> LayeredMinimizerStage<O, OT, S>
-where
-    O: MapObserver,
-    OT: ObserversTuple<S>,
-    S: HasCorpus + HasMetadata + HasNamedMetadata,
-{
-    /// Create a new [`LayeredMinimizerStage`].
-    #[must_use]
-    pub fn new<F>(map_feedback: &F) -> Self
-    where
-        F: HasObserverName + Named + UsesObserver<S, Observer = O>,
-        for<'it> O: AsIter<'it, Item = O::Entry>,
-    {
-        Self {
-            map_observer_name: map_feedback.observer_name().to_string(),
-            stage_max: CAL_STAGE_START,
-            phantom: PhantomData,
-        }
+// TODO: Either rework this custom stage to not be a stage, or do something
+// more intelligent here around restarts. Given that this stage executes inputs,
+// it might crash the process (e.g. if using in-process execution). When libafl
+// restarts, we should not attempt to run the crashing input again and again,
+// lest we get stuck in a crashing loop.
+impl<O, MO, OT, S> Restartable<S> for LayeredMinimizerStage<O, MO, OT, S> {
+    fn should_restart(&mut self, _state: &mut S) -> Result<bool, Error> {
+        Ok(true)
+    }
+
+    fn clear_progress(&mut self, _state: &mut S) -> Result<(), Error> {
+        Ok(())
     }
 }
