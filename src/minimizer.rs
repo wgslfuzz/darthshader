@@ -1,10 +1,4 @@
 use core::{fmt::Debug, marker::PhantomData};
-
-use libafl_bolts::{
-    tuples::{Handle, MatchNameRef, NamedTuple},
-    AsSlice, HasLen,
-};
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use libafl::{
@@ -20,6 +14,12 @@ use libafl::{
     state::{HasClientPerfMonitor, HasCorpus, HasCurrentTestcase, HasExecutions, HasRand},
     Error,
 };
+use libafl_bolts::{
+    tuples::{Handle, MatchNameRef, NamedTuple},
+    AsSlice, HasLen,
+};
+use log::{debug, warn};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ast::{mutate::ASTDeleteMutator, Ast},
@@ -73,7 +73,7 @@ where
                     assert!(func.validate_dag().is_ok());
                 }
                 if let Err(err) = ir.try_get_text() {
-                    println!(
+                    warn!(
                         "Minimizer {} broke sample: {}",
                         minimizers.name(rand_idx).unwrap(),
                         err
@@ -214,7 +214,7 @@ where
         let mut stable_novelties: Vec<usize> =
             novelties.difference(&unstable_entries).cloned().collect();
         stable_novelties.sort();
-        println!(
+        debug!(
             "{} has {} unstable entries, {} stable entries",
             state.current_corpus_id().unwrap().unwrap(),
             unstable_entries.len(),
@@ -232,13 +232,13 @@ where
                 LayeredInput::Ast(_) => self.minimize_ast(state, &smallest),
             };
             let Some(mutated) = mutated else {
-                println!("warning: mutator failed to mutate");
+                warn!("mutator failed to mutate");
                 continue;
             };
 
             executor.observers_mut().pre_exec_all(state, &mutated)?;
             if executor.run_target(fuzzer, state, mgr, &mutated)? != exit_kind {
-                println!("warning: mutation changed exit_kind, discarding");
+                warn!("mutation changed exit_kind, discarding");
                 continue;
             }
 
@@ -255,8 +255,9 @@ where
             }
 
             if mutated.len() >= smallest_size {
-                println!(
-                    "warning: minimizer didn't produce smaller sample {} vs {}",
+                warn!(
+                    "warning: minimizer didn't produce smaller sample {} vs
+                 {}",
                     mutated.len(),
                     smallest_size
                 );
