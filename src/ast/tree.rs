@@ -7,6 +7,7 @@ use std::{
     sync::LazyLock,
 };
 
+use log::debug;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tinystr::TinyAsciiStr;
 use tinyvec::ArrayVec;
@@ -111,7 +112,7 @@ impl From<&str> for NodeText {
         } else if let Ok(index) = ATOMS.binary_search(&value) {
             NodeText::Atom(ATOMS[index])
         } else {
-            println!("hashing: {}", value);
+            debug!("hashing: {}", value);
             let mut hasher = DefaultHasher::new();
             value.hash(&mut hasher);
             let trunc = format!("trunc_{}", hasher.finish() as u32);

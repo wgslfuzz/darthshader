@@ -6,6 +6,7 @@ use libafl_bolts::{
     rands::{Rand, StdRand},
     Error, Named,
 };
+use log::error;
 use naga::{
     valid::{ShaderStages, TypeFlags},
     AddressSpace, ArraySize, Binding, Block, BuiltIn, EntryPoint, Expression, Function,
@@ -1198,7 +1199,7 @@ where
         let text = match ir.try_get_text() {
             Ok(text) => text,
             Err(err) => {
-                println!("Generator built invalid file: {}", err);
+                error!("Generator built invalid file: {}", err);
                 let ast = Ast::try_from_wgsl("".as_bytes()).unwrap();
                 return Ok(LayeredInput::Ast(ast));
             }

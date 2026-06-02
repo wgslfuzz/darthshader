@@ -38,6 +38,7 @@ use libafl_bolts::{
     rands::{Rand, StdRand},
     shmem::{unix_shmem::UnixShMem, ShMem, ShMemProvider, UnixShMemProvider},
     tuples::{tuple_list, Handled},
+    SimpleStdoutLogger,
     StdTargetArgs,
 };
 
@@ -56,6 +57,8 @@ use darthshader::{
 };
 
 pub fn main() {
+    SimpleStdoutLogger::set_logger().unwrap();
+
     let res = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author("Lukas Bernhard")
