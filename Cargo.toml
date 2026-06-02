@@ -11,12 +11,14 @@ name = "darthshader"
 path = "src/lib.rs"
 
 [[bin]]
-name = "fuzz"
-path = "src/bin/fuzz.rs"
-
-[[bin]]
 name = "lifter"
 path = "src/lifter.rs"
+
+[workspace]
+members = [
+    ".",
+    "darthshader-afl",
+]
 
 [dependencies]
 tree-sitter = "0.21"
@@ -25,20 +27,15 @@ naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out
 libafl = { version = "0.11.2", features = ["default", "introspection"] }
 libafl_bolts = "0.11.2"
 clap = { version = "4", features = ["derive"] }
-nix = "0.26"
 serde = "1"
 ron = "0.8"
 ahash = "0.8"
-mimalloc = { version = "*", default-features = false }
-glob = "0.3"
 hashbrown = "0.*"
 rand = { version = "0.8", features = ["small_rng"] }
 tinyvec = { version = "1", features = ["serde"] }
 tinystr = { version = "0.7", features = ["serde"] }
-regex = "1"
 bitflags = "1"
 smallvec = "1"
-serde_yaml = "0.9"
 
 [build-dependencies]
 cc = "*"

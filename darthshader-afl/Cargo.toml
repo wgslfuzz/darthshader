@@ -1,0 +1,15 @@
+[package]
+name = "darthshader-afl"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+
+[dependencies]
+darthshader = { path = ".." }
+mimalloc = { version = "*", default-features = false }
+clap = { version = "4", features = ["derive"] }
+serde_yaml = "0.9"
+glob = "0.3"
+libafl = { version = "0.11.2", features = ["default", "introspection"] }
+libafl_bolts = "0.11.2"
+nix = "0.26"
