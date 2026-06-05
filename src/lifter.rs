@@ -1,21 +1,11 @@
-#![feature(lazy_cell)]
 #![feature(variant_count)]
-
-extern crate link_cplusplus;
 
 use std::{fs, path::PathBuf};
 
 use clap::{Arg, Command};
-use layeredinput::LayeredInput;
+use darthshader::layeredinput::LayeredInput;
 use libafl::prelude::HasTargetBytes;
 use libafl_bolts::AsSlice;
-
-mod ast;
-mod dictionary;
-mod generator;
-mod ir;
-mod layeredinput;
-mod randomext;
 
 pub fn main() {
     let res = Command::new(env!("CARGO_PKG_NAME"))

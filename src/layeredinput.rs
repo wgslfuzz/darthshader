@@ -13,7 +13,7 @@ use crate::ast::Ast;
 use crate::ir::iter::{BlockVisitorMut, FunctionIdentifier, IterFuncs};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub(crate) struct IR {
+pub struct IR {
     module: naga::Module,
     #[serde(skip)]
     text: OnceCell<Result<String, String>>,
@@ -73,14 +73,14 @@ impl IR {
             .as_ref()
     }
 
-    pub fn get_func(&self, fid: FunctionIdentifier) -> &Function {
+    pub(crate) fn get_func(&self, fid: FunctionIdentifier) -> &Function {
         match fid {
             FunctionIdentifier::Function(handle) => &self.get_module().functions[handle],
             FunctionIdentifier::EntryPoint(idx) => &self.get_module().entry_points[idx].function,
         }
     }
 
-    pub fn get_func_mut(&mut self, fid: FunctionIdentifier) -> &mut Function {
+    pub(crate) fn get_func_mut(&mut self, fid: FunctionIdentifier) -> &mut Function {
         match fid {
             FunctionIdentifier::Function(handle) => &mut self.get_module_mut().functions[handle],
             FunctionIdentifier::EntryPoint(idx) => {
