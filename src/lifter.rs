@@ -11,6 +11,7 @@ use libafl::prelude::HasTargetBytes;
 use libafl_bolts::AsSlice;
 
 mod ast;
+mod dictionary;
 mod generator;
 mod ir;
 mod layeredinput;

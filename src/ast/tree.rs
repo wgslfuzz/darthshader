@@ -12,17 +12,18 @@ use tinystr::TinyAsciiStr;
 use tinyvec::ArrayVec;
 use tree_sitter::{Language, Parser, TreeCursor};
 
+use crate::dictionary;
+
 extern "C" {
     fn tree_sitter_wgsl() -> Language;
 }
 
 static ATOMS: LazyLock<[&'static str; 301]> = LazyLock::new(|| {
-    let s = include_str!("../dictionary.txt");
-    let mut token: Vec<&'static str> = s.lines().collect();
+    let mut token: Vec<&'static str> = dictionary::strings().collect();
     token.sort();
     token
         .try_into()
-        .expect("Lenght of array must match length of dictionary.txt")
+        .expect("Length of array must match size of dictionary.")
 });
 
 static WGSLLANGUAGE: LazyLock<Language> = LazyLock::new(|| unsafe { tree_sitter_wgsl() });
