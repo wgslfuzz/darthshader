@@ -15,6 +15,7 @@ use std::cmp;
 use crate::randomext::RandExt;
 use crate::{
     ast::tree::{ASTHandle, Cursor, NodeKind},
+    dictionary,
     layeredinput::LayeredInput,
 };
 
@@ -337,8 +338,7 @@ impl ASTReplaceTokenMutator {
     /// Creates a new [`ASTReplaceTokenMutator`].
     #[must_use]
     pub fn new() -> Self {
-        let s = include_str!("../dictionary.txt");
-        let token: Vec<String> = s.lines().map(|l| l.to_owned()).collect();
+        let token: Vec<String> = dictionary::strings().map(|s| s.to_owned()).collect();
         Self { token }
     }
 }

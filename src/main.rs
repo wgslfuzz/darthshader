@@ -35,7 +35,7 @@ use libafl::{
     fuzzer::{Fuzzer, StdFuzzer},
     inputs::Input,
     monitors::SimpleMonitor,
-    mutators::{StdMOptMutator, Tokens},
+    mutators::StdMOptMutator,
     observers::{HitcountsMapObserver, StdMapObserver, TimeObserver},
     prelude::{forkserver::HasForkserver, CorpusId},
     schedulers::{
@@ -56,6 +56,7 @@ use libafl_bolts::{
 use nix::sys::signal::Signal;
 
 mod ast;
+mod dictionary;
 mod exit;
 mod generator;
 mod ir;
@@ -374,15 +375,7 @@ fn fuzz(
     std::mem::drop(shexit_to_drop);
     std::mem::drop(shinput_to_drop);
 
-    let tokens = {
-        let s = include_str!("dictionary.txt");
-        let v: Vec<Vec<u8>> = s.lines().map(|l| l.as_bytes().to_vec()).collect();
-        let mut tokens = Tokens::new();
-        tokens.add_tokens(v.iter());
-        assert!(!tokens.is_empty());
-        tokens
-    };
-    state.add_metadata(tokens);
+    state.add_metadata(dictionary::tokens());
 
     if let Some(mut seed_dir) = seed_dir {
         seed_dir.push("**/*");
