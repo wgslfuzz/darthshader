@@ -1,16 +1,3 @@
-#![feature(variant_count)]
-#![deny(
-    clippy::correctness,
-    clippy::cast_possible_wrap,
-    unused_lifetimes,
-    unused_unsafe,
-    single_use_lifetimes,
-    missing_debug_implementations
-)]
-#![recursion_limit = "256"]
-
-extern crate link_cplusplus;
-
 use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -55,25 +42,17 @@ use libafl_bolts::{
 
 use nix::sys::signal::Signal;
 
-mod ast;
-mod dictionary;
-mod exit;
-mod generator;
-mod ir;
-mod ladder;
-mod layeredinput;
-mod minimizer;
-mod randomext;
-
-use crate::generator::{GeneratorConfig, IRGenerator};
-use crate::{
+// Library imports
+use darthshader::generator::{GeneratorConfig, IRGenerator};
+use darthshader::{
     ast::mutate::ast_mutations,
+    dictionary,
     exit::{ExitFeedback, ExitObserver},
     ir::mutate::ir_mutations,
     ladder::LadderStage,
+    layeredinput::LayeredInput,
     minimizer::LayeredMinimizerStage,
 };
-use layeredinput::LayeredInput;
 
 pub fn main() {
     let res = Command::new(env!("CARGO_PKG_NAME"))
@@ -371,9 +350,12 @@ fn fuzz(
     let mut executor = TimeoutForkserverExecutor::with_signal(forkserver, timeout, Signal::SIGKILL)
         .expect("Failed to create the executor.");
 
-    std::mem::drop(shmap_to_drop);
-    std::mem::drop(shexit_to_drop);
-    std::mem::drop(shinput_to_drop);
+    #[allow(clippy::drop_copy)]
+    {
+        std::mem::drop(shmap_to_drop);
+        std::mem::drop(shexit_to_drop);
+        std::mem::drop(shinput_to_drop);
+    }
 
     state.add_metadata(dictionary::tokens());
 

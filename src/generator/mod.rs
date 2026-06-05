@@ -3,6 +3,6 @@ mod expression;
 mod generateir;
 mod statement;
 
-pub(crate) use config::GeneratorConfig;
+pub use config::GeneratorConfig;
 pub(crate) use generateir::FunctionGenCtx;
-pub(crate) use generateir::IRGenerator;
+pub use generateir::IRGenerator;

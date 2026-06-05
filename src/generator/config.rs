@@ -51,7 +51,7 @@ impl MinMax<u32> {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase"))]
-pub(crate) struct GeneratorConfig {
+pub struct GeneratorConfig {
     pub global_const_exprs_count: MinMax<u32>,
     pub global_variables_count: MinMax<u32>,
     pub functions_count: MinMax<u32>,
@@ -66,17 +66,17 @@ pub(crate) struct GeneratorConfig {
 }
 
 #[derive(Debug)]
-pub(crate) struct ExpressionWeightMap {
+pub struct ExpressionWeightMap {
     pub weights: [u32; std::mem::variant_count::<ExpressionGenerators>()],
 }
 
 #[derive(Debug)]
-pub(crate) struct ConstExpressionWeightMap {
+pub struct ConstExpressionWeightMap {
     pub weights: [u32; std::mem::variant_count::<ConstExpressionGenerators>()],
 }
 
 #[derive(Debug)]
-pub(crate) struct StatementWeightMap {
+pub struct StatementWeightMap {
     pub weights: [u32; std::mem::variant_count::<StatementGenerators>()],
 }
 

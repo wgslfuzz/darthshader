@@ -6,9 +6,13 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
 
-[[bin]]
+[lib]
 name = "darthshader"
-path = "src/main.rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuzz"
+path = "src/bin/fuzz.rs"
 
 [[bin]]
 name = "lifter"

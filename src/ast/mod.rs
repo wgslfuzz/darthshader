@@ -1,4 +1,4 @@
-pub(crate) mod mutate;
+pub mod mutate;
 pub(crate) mod tree;
 
-pub(crate) use tree::Ast;
+pub use tree::Ast;
