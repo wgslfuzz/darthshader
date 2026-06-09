@@ -260,9 +260,8 @@ fn fuzz(
         shexit.write_to_env("__LIBAFL_EXIT_ID").unwrap();
     }
 
-    let edges_observer = unsafe {
-        HitcountsMapObserver::new(StdMapObserver::new("shared_mem", shmem_buf))
-    };
+    let edges_observer =
+        unsafe { HitcountsMapObserver::new(StdMapObserver::new("shared_mem", shmem_buf)) };
 
     let edges_observer = edges_observer.track_indices().track_novelties();
 

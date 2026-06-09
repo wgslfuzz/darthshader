@@ -397,7 +397,7 @@ struct CallGenerator;
 impl StatementGenerator for CallGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
         let Some(&function) = ctx.rng.choose(&ctx.available_funcs) else {
-            return None
+            return None;
         };
 
         let callee = &ctx.module.functions[function];
