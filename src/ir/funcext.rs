@@ -1,6 +1,37 @@
+use log::error;
 use naga::{Expression, Function, Handle, RayQueryFunction, Statement};
 
-use crate::ir::iter::{StatementVisitor, UsesExprIter};
+use crate::ir::{
+    debug::ExpressionsPrinter,
+    iter::{StatementVisitor, UsesExprIter},
+};
+
+fn log_err(func: &Function) {
+    error!("failing graph: {}", ExpressionsPrinter(&func.expressions));
+}
+
+fn is_cyclic(
+    func: &Function,
+    handle: Handle<Expression>,
+    in_stack: &mut Vec<bool>,
+    done: &mut Vec<bool>,
+) -> bool {
+    if done[handle.index()] {
+        return false;
+    }
+    in_stack[handle.index()] = true;
+    for used_handle in func.expressions[handle].iter_used_exprs() {
+        if in_stack[used_handle.index()] {
+            return true;
+        }
+        if is_cyclic(func, used_handle, in_stack, done) {
+            return true;
+        }
+    }
+    in_stack[handle.index()] = false;
+    done[handle.index()] = true;
+    false
+}
 
 pub trait FuncExt {
     fn validate_dag(&self) -> Result<(), ()>;
@@ -10,36 +41,6 @@ impl FuncExt for Function {
     fn validate_dag(&self) -> Result<(), ()> {
         let mut done = vec![false; self.expressions.len()];
         let mut in_stack = vec![false; self.expressions.len()];
-
-        fn log_err(func: &Function) {
-            println!("failing graph:");
-            for (handle, expr) in func.expressions.iter() {
-                println!("{:?} {:?}", handle, expr);
-            }
-        }
-
-        fn is_cyclic(
-            func: &Function,
-            handle: Handle<Expression>,
-            in_stack: &mut Vec<bool>,
-            done: &mut Vec<bool>,
-        ) -> bool {
-            if done[handle.index()] {
-                return false;
-            }
-            in_stack[handle.index()] = true;
-            for used_handle in func.expressions[handle].iter_used_exprs() {
-                if in_stack[used_handle.index()] {
-                    return true;
-                }
-                if is_cyclic(func, used_handle, in_stack, done) {
-                    return true;
-                }
-            }
-            in_stack[handle.index()] = false;
-            done[handle.index()] = true;
-            false
-        }
 
         for (handle, _) in self.expressions.iter() {
             if is_cyclic(self, handle, &mut in_stack, &mut done) {

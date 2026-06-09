@@ -6,7 +6,7 @@ use naga::{
 };
 use rand::{rngs::SmallRng, seq::IteratorRandom, Rng, SeedableRng};
 
-use crate::ir::iter::FunctionIdentifier;
+use crate::ir::{debug::ExpressionsPrinter, iter::FunctionIdentifier};
 
 use super::iter::UsesExprIter;
 
@@ -77,10 +77,11 @@ impl BestEffortTypifier {
                 }
             }
             if work_done > expressions.len() * 2 {
-                for (eh, expr) in expressions.iter() {
-                    println!("{:?} {:?}", eh, expr);
-                }
-                panic!("Expressions contain a cycle when adding {:?}", expr_handle);
+                panic!(
+                    "Expressions contain a cycle when adding {:?}: {}",
+                    expr_handle,
+                    ExpressionsPrinter(expressions)
+                );
             }
         }
     }

@@ -2,9 +2,6 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 
-use libafl_bolts::impl_serdeany;
-use serde::{Deserialize, Serialize};
-
 use libafl::{
     common::{HasMetadata, HasNamedMetadata},
     corpus::{Corpus, CorpusId, HasCurrentCorpusId, Testcase},
@@ -15,6 +12,9 @@ use libafl::{
     state::{HasClientPerfMonitor, HasCorpus, HasCurrentTestcase, HasRand},
     Error, HasScheduler,
 };
+use libafl_bolts::impl_serdeany;
+use log::debug;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ast::Ast,
@@ -120,13 +120,13 @@ where
         }
 
         let id = state.current_corpus_id()?.unwrap();
-        println!("scheduling for ladder {}", id);
+        debug!("scheduling for ladder {}", id);
 
         let input = state.current_input_cloned()?;
 
         match input {
             LayeredInput::IR(ir) => {
-                println!("IR ladder");
+                debug!("IR ladder");
                 if may_descend(&*state.current_testcase().unwrap()) {
                     let Ok(text) = ir.try_get_text() else {
                         return Ok(());
@@ -154,7 +154,7 @@ where
                         Self::prohibit_descend(state, nidx);
                     }
                 } else {
-                    println!("not allowed to accend");
+                    debug!("not allowed to accend");
                 }
             }
         };

@@ -9,6 +9,7 @@ use libafl::{
     Error,
 };
 use libafl_bolts::{ownedref::OwnedSlice, HasLen};
+use log::debug;
 use naga::{
     back::wgsl::Writer, Block, Expression, Function, Handle, Range, ScalarKind, Statement, Type,
     TypeInner,
@@ -273,7 +274,7 @@ impl Input for LayeredInput {
     where
         P: AsRef<Path>,
     {
-        println!("from file {:?}", path.as_ref());
+        debug!("from file: {:?}", path.as_ref());
 
         let input = fs::read(path.as_ref())?;
         let input = String::from_utf8(input)?;
@@ -317,7 +318,7 @@ impl Input for LayeredInput {
                 });
 
                 let Ok(Ok(module)) = res else {
-                    println!("Attempting to parse as AST: {:?}", path.as_ref());
+                    debug!("Attempting to parse as AST: {:?}", path.as_ref());
                     let ast = match Ast::try_from_wgsl(input.as_bytes()) {
                         Ok(ast) => ast,
                         Err(_) => Ast::try_from_wgsl("".as_bytes()).unwrap(),

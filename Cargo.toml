@@ -36,6 +36,7 @@ tinyvec = { version = "1", features = ["serde"] }
 tinystr = { version = "0.7", features = ["serde"] }
 bitflags = "1"
 smallvec = "1"
+log = "0.4"
 
 [build-dependencies]
 cc = "*"
