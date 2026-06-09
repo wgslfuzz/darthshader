@@ -12,8 +12,8 @@
 extern crate link_cplusplus;
 
 pub mod ast;
-pub mod exit;
 pub mod dictionary;
+pub mod exit;
 pub mod generator;
 pub mod ir;
 pub mod ladder;
