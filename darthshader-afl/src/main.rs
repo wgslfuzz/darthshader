@@ -352,6 +352,7 @@ fn fuzz(
         .is_deferred_frksrv(true)
         .kill_signal(Signal::SIGKILL)
         .timeout(timeout)
+        .min_input_size(0)
         .build_dynamic_map(edges_observer, tuple_list!(time_observer, exit_observer))
         .unwrap();
 
