@@ -35,4 +35,4 @@ tinyvec = { version = "1", features = ["serde"] }
 tree-sitter = "0.21"
 
 [build-dependencies]
-cc = "*"
+cc = "1.2"
