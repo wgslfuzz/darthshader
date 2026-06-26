@@ -3,6 +3,10 @@ name = "darthshader"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
+description = "A library for building WebGPU shader compilation pipeline fuzzers"
+license = "Apache-2.0"
+repository = "https://github.com/wgslfuzz/darthshader"
+readme = "../README.md"
 
 [lib]
 name = "darthshader"
