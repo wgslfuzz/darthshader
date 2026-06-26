@@ -1,45 +1,14 @@
 cargo-features = ["profile-rustflags"]
 
-[package]
-name = "darthshader"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.77"
-
-[lib]
-name = "darthshader"
-path = "src/lib.rs"
-
-[[bin]]
-name = "lifter"
-path = "src/lifter.rs"
-
 [workspace]
 members = [
-    ".",
+    "darthshader",
     "darthshader-afl",
 ]
-
-[dependencies]
-tree-sitter = "0.21"
-link-cplusplus = "1.0"
-naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
-libafl = { version = "0.15.4", features = ["default", "introspection"] }
-libafl_bolts = "0.15.4"
-clap = { version = "4", features = ["derive"] }
-serde = "1"
-ron = "0.8"
-ahash = "0.8"
-hashbrown = "0.*"
-rand = { version = "0.9", features = ["small_rng"] }
-tinyvec = { version = "1", features = ["serde"] }
-tinystr = { version = "0.7", features = ["serde"] }
-bitflags = "1"
-smallvec = "1"
-log = "0.4"
-
-[build-dependencies]
-cc = "*"
+# Use the edition 2021 feature resolver for the workspace.
+# Virtual workspaces default to resolver = "1", but edition 2021 members imply resolver = "2".
+# Specifying it explicitly avoids cargo warnings.
+resolver = "2"
 
 [profile.release]
 lto = true
