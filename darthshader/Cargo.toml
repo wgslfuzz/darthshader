@@ -1,0 +1,34 @@
+[package]
+name = "darthshader"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "darthshader"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lifter"
+path = "src/lifter.rs"
+
+[dependencies]
+ahash = "0.8"
+bitflags = "1"
+clap = { version = "4", features = ["derive"] }
+hashbrown = "0.*"
+libafl = { version = "0.15.4", features = ["default", "introspection"] }
+libafl_bolts = "0.15.4"
+link-cplusplus = "1.0"
+log = "0.4"
+naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
+rand = { version = "0.9", features = ["small_rng"] }
+ron = "0.8"
+serde = "1"
+smallvec = "1"
+tinystr = { version = "0.7", features = ["serde"] }
+tinyvec = { version = "1", features = ["serde"] }
+tree-sitter = "0.21"
+
+[build-dependencies]
+cc = "*"
