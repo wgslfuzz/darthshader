@@ -7,7 +7,7 @@ DarthShader is a fuzzer for fuzzing the WebGPU shader compilation pipeline in we
 The usage of DarthShader is best explained by its `--help` switch:
 
 ```console
-Usage: darthshader [OPTIONS] --output <out> <exec> [-- [arguments]...]
+Usage: darthshader-afl [OPTIONS] --output <out> <exec> [-- [arguments]...]
 
 Arguments:
   <exec>          The instrumented binary we want to fuzz
