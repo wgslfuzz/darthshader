@@ -4,3 +4,4 @@ pub(crate) mod funcext;
 pub(crate) mod iter;
 pub(crate) mod minimizer;
 pub mod mutate;
+pub(crate) mod naga_enums;

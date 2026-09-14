@@ -34,6 +34,7 @@ use super::config::GeneratorConfig;
 use super::expression::{ConstExpressionGenerators, ExpressionGenerators};
 use super::statement::StatementGenerators;
 use crate::ir::iter::FunctionIdentifier;
+use crate::ir::naga_enums::NagaEnum;
 
 bitflags::bitflags! {
     pub struct CodeContext: u8 {
@@ -765,13 +766,7 @@ impl<'a> GlobalGenCtx<'a> {
     }
 
     fn create_entrypoint(&mut self) -> usize {
-        let stages = [
-            ShaderStage::Compute,
-            ShaderStage::Fragment,
-            ShaderStage::Vertex,
-        ];
-        assert_eq!(std::mem::variant_count::<ShaderStage>(), stages.len());
-        let stage = *self.rng.choose(&stages).unwrap();
+        let stage = *self.rng.choose(ShaderStage::VALUES).unwrap();
 
         let mut func = Function::default();
         let num_locals = self.rng.below_or_zero(5);
