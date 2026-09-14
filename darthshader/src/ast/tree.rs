@@ -756,3 +756,280 @@ impl From<&Ast> for String {
         s
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_WGSL: &str = r#"
+@compute @workgroup_size(1)
+fn main() {
+    var x: i32 = 42;
+    var y: i32 = x + 1;
+}
+"#;
+
+    #[test]
+    fn test_ast_handle() {
+        let default_handle = ASTHandle::default();
+        assert_eq!(default_handle.index(), u32::MAX as usize);
+
+        let handle: ASTHandle = 123.into();
+        assert_eq!(handle.index(), 123);
+    }
+
+    #[test]
+    fn test_handle_transition() {
+        let transition = HandleTransition {
+            vec: vec![Some(10.into()), None, Some(20.into())],
+        };
+        assert_eq!(transition[0.into()], Some(10.into()));
+        assert_eq!(transition[1.into()], None);
+        assert_eq!(transition[2.into()], Some(20.into()));
+    }
+
+    #[test]
+    fn test_node_kind() {
+        let default_kind = NodeKind::default();
+        assert_eq!(default_kind.0, u16::MAX);
+
+        let kind: NodeKind = ("test", 42).into();
+        assert_eq!(kind.id(), 42);
+    }
+
+    #[test]
+    fn test_node_text() {
+        // Short text fits in TinyAsciiStr
+        let short: NodeText = "short".into();
+        assert_eq!(short.as_str(), "short");
+
+        // Long text not in ATOMS gets hashed and truncated
+        let long_str = "this_is_a_very_long_identifier_exceeding_max_str_limit";
+        let long_text: NodeText = long_str.into();
+        assert!(long_text.as_str().starts_with("trunc_"));
+        assert!(long_text.as_str().len() <= 16);
+    }
+
+    #[test]
+    fn test_ast_children() {
+        let mut children = ASTChildren::default();
+        assert!(children.is_empty());
+        assert_eq!(children.len(), 0);
+
+        children.push(1.into());
+        children.push(2.into());
+        children.push(3.into());
+
+        assert_eq!(children.len(), 3);
+        assert!(!children.is_empty());
+
+        let handles: Vec<ASTHandle> = children.iter().cloned().collect();
+        assert_eq!(handles, vec![1.into(), 2.into(), 3.into()]);
+
+        let removed = children.remove(1);
+        assert_eq!(removed, 2.into());
+        assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn test_ast_node() {
+        let mut node = ASTNode::new();
+        assert!(node.is_leaf());
+        assert_eq!(node.get_text(), "");
+        assert!(!node.is_function());
+        assert!(!node.is_identifier());
+
+        node.set_text("test_node");
+        assert_eq!(node.get_text(), "test_node");
+
+        node.children_mut().push(1.into());
+        assert!(!node.is_leaf());
+    }
+
+    #[test]
+    fn test_ast_parse_valid_wgsl() {
+        let ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).expect("Failed to parse valid WGSL");
+        assert!(ast.len() > 0);
+        ast.assert_dense();
+        assert!(ast.verify());
+        assert_eq!(ast.get_root(), 0.into());
+
+        let text = ast.get_text();
+        assert!(text.contains("main"));
+        assert!(text.contains("compute"));
+        assert!(text.contains("var"));
+        assert!(text.contains("42"));
+
+        let s: String = (&ast).into();
+        assert_eq!(s, *text);
+
+        // Verify that converting back to text produces valid WGSL tokens that can be parsed back into an AST
+        let reparsed =
+            Ast::try_from_wgsl(text.as_bytes()).expect("Reparsing generated text failed");
+        assert!(reparsed.verify());
+        assert_eq!(reparsed.get_text(), text);
+    }
+
+    #[test]
+    fn test_ast_parse_invalid_wgsl() {
+        let invalid = "fn main( { {{{ invalid syntax";
+        assert!(Ast::try_from_wgsl(invalid.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn test_ast_cursor() {
+        let ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        // Find a leaf node deep in the tree
+        let (leaf_handle, _) = ast.iter().find(|(_, node)| node.is_leaf()).unwrap();
+
+        let mut cursor = Cursor::new(&ast, leaf_handle);
+        let mut steps = 0;
+        while let Some((parent_handle, _)) = cursor.goto_parent() {
+            steps += 1;
+            if parent_handle == ast.get_root() {
+                break;
+            }
+        }
+        assert!(steps > 0);
+    }
+
+    #[test]
+    fn test_ast_iterators() {
+        let ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let dfs_nodes: Vec<_> = ast.iter_dfs(ast.get_root()).map(|(h, _)| h).collect();
+        let post_nodes: Vec<_> = ast
+            .iter_post_order(ast.get_root())
+            .map(|(h, _)| h)
+            .collect();
+
+        assert_eq!(dfs_nodes.len(), ast.len());
+        assert_eq!(post_nodes.len(), ast.len());
+
+        // DFS should start with the root
+        assert_eq!(dfs_nodes.first().cloned(), Some(ast.get_root()));
+        // Post-order should end with the root
+        assert_eq!(post_nodes.last().cloned(), Some(ast.get_root()));
+    }
+
+    #[test]
+    fn test_ast_swap() {
+        let mut ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let orig_text = ast.get_text().clone();
+
+        // Find a node with at least two children whose subtrees have different text
+        let (parent_handle, parent_node) =
+            ast.iter().find(|(_, n)| n.children().len() >= 2).unwrap();
+        let child1 = *parent_node.children().iter().nth(0).unwrap();
+        let child2 = *parent_node.children().iter().nth(1).unwrap();
+
+        ast.swap(child1, child2);
+        assert!(ast.verify());
+
+        let new_parent = ast.get_node(parent_handle);
+        assert_eq!(*new_parent.children().iter().nth(0).unwrap(), child2);
+        assert_eq!(*new_parent.children().iter().nth(1).unwrap(), child1);
+
+        let new_text = ast.get_text();
+        assert!(!new_text.is_empty());
+        assert_ne!(&orig_text, new_text);
+    }
+
+    #[test]
+    fn test_ast_purge() {
+        let mut ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let initial_len = ast.len();
+        let orig_text = ast.get_text().clone();
+
+        // Find a child of the root to purge
+        let root_node = ast.get_node(ast.get_root());
+        let child_to_purge = *root_node.children().iter().next().unwrap();
+
+        let purged_count = ast.purge(child_to_purge);
+        assert!(purged_count > 0);
+        assert_eq!(ast.len(), initial_len - purged_count);
+        assert_eq!(ast.free_nodes.len(), purged_count);
+        assert!(ast.verify());
+
+        let new_text = ast.get_text();
+        assert_ne!(&orig_text, new_text);
+    }
+
+    #[test]
+    fn test_ast_extract_subtree() {
+        let ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        // Find a non-root node with children
+        let (subtree_root, _) = ast
+            .iter()
+            .find(|(h, n)| *h != ast.get_root() && !n.children().is_empty())
+            .unwrap();
+
+        let (subtree, transition) = ast.extract_subtree(subtree_root);
+        assert!(subtree.verify());
+        assert!(subtree.len() > 0);
+        assert!(subtree.len() <= ast.len());
+        assert_eq!(subtree.get_node(subtree.get_root()).parent, None);
+        assert!(transition[subtree_root].is_some());
+
+        let subtree_text = subtree.get_text();
+        assert!(!subtree_text.is_empty());
+    }
+
+    #[test]
+    fn test_ast_splice() {
+        let mut ast1 = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let ast2 = Ast::try_from_wgsl("fn helper() { var a: i32 = 1; }".as_bytes()).unwrap();
+
+        // Find a leaf in ast1 to splice into
+        let (target_handle, _) = ast1.iter().find(|(_, n)| n.is_leaf()).unwrap();
+        ast1.splice(target_handle, &ast2, ast2.get_root());
+        assert!(ast1.verify());
+
+        let new_text = ast1.get_text();
+        assert!(new_text.contains("helper"));
+        assert!(new_text.contains("var"));
+    }
+
+    #[test]
+    fn test_ast_merge_ast() {
+        let mut ast1 = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let ast2 = Ast::try_from_wgsl("fn helper() { var a: i32 = 1; }".as_bytes()).unwrap();
+
+        let (target_handle, _) = ast1
+            .iter()
+            .find(|(h, n)| *h != ast1.get_root() && n.is_leaf())
+            .unwrap();
+        ast1.merge_ast(target_handle, &ast2);
+        assert!(ast1.verify());
+
+        let new_text = ast1.get_text();
+        assert!(new_text.contains("helper"));
+    }
+
+    #[test]
+    fn test_ast_deflate() {
+        let mut ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let root_node = ast.get_node(ast.get_root());
+        let child_to_purge = *root_node.children().iter().next().unwrap();
+        ast.purge(child_to_purge);
+        assert!(!ast.free_nodes.is_empty());
+
+        let text_before_deflate = ast.get_text().clone();
+        ast.deflate();
+        assert!(ast.free_nodes.is_empty());
+        ast.assert_dense();
+        assert!(ast.verify());
+
+        // Deflate removes dead holes; the live AST text must remain identical
+        assert_eq!(ast.get_text(), &text_before_deflate);
+    }
+
+    #[test]
+    fn test_ast_serde() {
+        let ast = Ast::try_from_wgsl(SAMPLE_WGSL.as_bytes()).unwrap();
+        let serialized = ron::to_string(&ast).expect("Failed to serialize AST");
+        let deserialized: Ast = ron::from_str(&serialized).expect("Failed to deserialize AST");
+
+        assert!(deserialized.verify());
+        assert_eq!(ast.get_text(), deserialized.get_text());
+    }
+}
