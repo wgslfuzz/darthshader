@@ -23,6 +23,8 @@ clap = { version = "4", features = ["derive"] }
 hashbrown = "0.*"
 libafl = { version = "0.15.4", features = ["default", "introspection"] }
 libafl_bolts = "0.15.4"
+# Only used through `libafl`'s re-exports; see the `extern crate` in lib.rs.
+libafl_derive = "0.15.4"
 link-cplusplus = "1.0"
 log = "0.4"
 naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
