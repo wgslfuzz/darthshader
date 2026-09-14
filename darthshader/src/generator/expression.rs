@@ -9,6 +9,7 @@ use naga::{
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
 
+use crate::ir::naga_enums::NagaEnum;
 use crate::{ir::exprscope::ExprScope, randomext::RandExt};
 
 use super::generateir::{FunctionGenCtx, GlobalGenCtx};
@@ -31,6 +32,19 @@ pub(super) enum ConstExpressionGenerators {
 }
 
 impl ConstExpressionGenerators {
+    /// The number of variants of this enum.
+    ///
+    /// This is not checked against the enum itself, so adding a variant
+    /// without bumping this constant still compiles; [`Self::iter`] would
+    /// just silently skip the new variant. In practice a new variant also
+    /// forces a new arm in [`Self::generate`], whose `match` is exhaustive,
+    /// and it is hard to do that and not notice [`Self::iter`] right below.
+    ///
+    /// What this constant does guarantee is that [`Self::iter`] and the
+    /// weight arrays in [`crate::generator::config`] never disagree on the
+    /// number of generators.
+    pub(super) const VARIANT_COUNT: usize = 5;
+
     pub(super) fn generate(&self, ctx: &mut GlobalGenCtx) -> Option<Expression> {
         match self {
             Self::Compose => <ComposeGenerator as ConstExpressionGenerator>::generate(ctx),
@@ -43,7 +57,7 @@ impl ConstExpressionGenerators {
 
     pub(super) fn iter() -> impl Iterator<Item = ConstExpressionGenerators> {
         use ConstExpressionGenerators as CEG;
-        static VALUES: [CEG; std::mem::variant_count::<CEG>()] = [
+        static VALUES: [CEG; ConstExpressionGenerators::VARIANT_COUNT] = [
             CEG::Compose,
             CEG::Constant,
             CEG::Literal,
@@ -79,6 +93,19 @@ pub(super) enum ExpressionGenerators {
 }
 
 impl ExpressionGenerators {
+    /// The number of variants of this enum.
+    ///
+    /// This is not checked against the enum itself, so adding a variant
+    /// without bumping this constant still compiles; [`Self::iter`] would
+    /// just silently skip the new variant. In practice a new variant also
+    /// forces a new arm in [`Self::generate`], whose `match` is exhaustive,
+    /// and it is hard to do that and not notice [`Self::iter`] right below.
+    ///
+    /// What this constant does guarantee is that [`Self::iter`] and the
+    /// weight arrays in [`crate::generator::config`] never disagree on the
+    /// number of generators.
+    pub(super) const VARIANT_COUNT: usize = 20;
+
     pub fn allowed_shader_stages(&self) -> ShaderStages {
         match self {
             Self::Derivative => ShaderStages::FRAGMENT,
@@ -113,7 +140,7 @@ impl ExpressionGenerators {
 
     pub fn iter() -> impl Iterator<Item = ExpressionGenerators> {
         use ExpressionGenerators as EG;
-        static VALUES: [EG; std::mem::variant_count::<EG>()] = [
+        static VALUES: [EG; ExpressionGenerators::VARIANT_COUNT] = [
             EG::Access,
             EG::AccessIndex,
             EG::ArrayLength,
@@ -191,9 +218,7 @@ impl ExpressionGenerator for UnaryGenerator {
         use naga::UnaryOperator as Uo;
         use ScalarKind as S;
         use TypeInner as TI;
-        let unary_ops = [Uo::BitwiseNot, Uo::LogicalNot, Uo::Negate];
-        assert_eq!(std::mem::variant_count::<Uo>(), unary_ops.len());
-        let op = *ctx.rng.choose(&unary_ops).unwrap();
+        let op = *ctx.rng.choose(Uo::VALUES).unwrap();
 
         let filter = match op {
             Uo::LogicalNot => |_, ty: &TypeInner| {
@@ -232,29 +257,7 @@ impl ExpressionGenerator for BinaryGenerator {
         use naga::BinaryOperator as Bi;
         use ScalarKind as S;
         use TypeInner as TI;
-        let binary_ops = [
-            Bi::Add,
-            Bi::And,
-            Bi::Divide,
-            Bi::Equal,
-            Bi::ExclusiveOr,
-            Bi::Greater,
-            Bi::GreaterEqual,
-            Bi::InclusiveOr,
-            Bi::Less,
-            Bi::LessEqual,
-            Bi::LogicalAnd,
-            Bi::LogicalOr,
-            Bi::Modulo,
-            Bi::Multiply,
-            Bi::NotEqual,
-            Bi::ShiftLeft,
-            Bi::ShiftRight,
-            Bi::Subtract,
-        ];
-        assert_eq!(std::mem::variant_count::<Bi>(), binary_ops.len());
-
-        let op = *ctx.rng.choose(&binary_ops).unwrap();
+        let op = *ctx.rng.choose(Bi::VALUES).unwrap();
         let (left, right) = match op {
             Bi::ShiftLeft | Bi::ShiftRight => {
                 let filter = |_, ty: &TypeInner| {
@@ -438,9 +441,7 @@ impl SplatGenerator {
         rng: &mut StdRand,
     ) -> Option<Expression> {
         use naga::VectorSize as Vs;
-        let sizes = [Vs::Bi, Vs::Tri, Vs::Quad];
-        assert_eq!(std::mem::variant_count::<Vs>(), sizes.len());
-        let size = *rng.choose(&sizes).unwrap();
+        let size = *rng.choose(Vs::VALUES).unwrap();
 
         let is_scalar = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar { .. });
         let (value, _) = scope.matching(is_scalar, types)?;
@@ -483,9 +484,7 @@ impl ExpressionGenerator for SwizzleGenerator {
             *ctx.rng.choose(components).unwrap(),
         ];
 
-        let sizes = [Vs::Bi, Vs::Tri, Vs::Quad];
-        assert_eq!(std::mem::variant_count::<Vs>(), sizes.len());
-        let size = *ctx.rng.choose(&sizes).unwrap();
+        let size = *ctx.rng.choose(Vs::VALUES).unwrap();
 
         Some(Expression::Swizzle {
             size,
@@ -551,7 +550,9 @@ impl ExpressionGenerator for MathGenerator {
         use naga::MathFunction as Mf;
         use ScalarKind as S;
         use TypeInner as TI;
-        let mathfuncs = &[
+        // Every `naga::MathFunction` except `Inverse` and `Outer`, which WGSL
+        // has no syntax for.
+        let mathfuncs: &[Mf; Mf::VARIANT_COUNT - 2] = &[
             Mf::Abs,
             Mf::Min,
             Mf::Max,
@@ -621,7 +622,6 @@ impl ExpressionGenerator for MathGenerator {
             Mf::Unpack2x16unorm,
             Mf::Unpack2x16float,
         ];
-        assert_eq!(std::mem::variant_count::<Mf>(), mathfuncs.len() + 2);
         let fun = *ctx.rng.choose(mathfuncs).unwrap();
 
         let expr = match fun {
@@ -1421,13 +1421,9 @@ impl ExpressionGenerator for DerivativeGenerator {
         };
         let (expr, _) = ctx.expr_matching(filter)?;
 
-        let axes = [RA::X, RA::Y, RA::Width];
-        assert_eq!(std::mem::variant_count::<RA>(), axes.len());
-        let axis = *ctx.rng.choose(&axes).unwrap();
+        let axis = *ctx.rng.choose(RA::VALUES).unwrap();
 
-        let controls = [RC::None, RC::Fine, RC::Coarse];
-        assert_eq!(std::mem::variant_count::<RC>(), controls.len());
-        let ctrl = *ctx.rng.choose(&controls).unwrap();
+        let ctrl = *ctx.rng.choose(RC::VALUES).unwrap();
 
         Some(Expression::Derivative { axis, ctrl, expr })
     }

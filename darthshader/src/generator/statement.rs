@@ -1,3 +1,4 @@
+use crate::ir::naga_enums::NagaEnum;
 use crate::randomext::RandExt;
 use libafl_bolts::rands::Rand;
 use naga::{
@@ -30,6 +31,19 @@ pub(super) enum StatementGenerators {
 }
 
 impl StatementGenerators {
+    /// The number of variants of this enum.
+    ///
+    /// This is not checked against the enum itself, so adding a variant
+    /// without bumping this constant still compiles; [`Self::iter`] would
+    /// just silently skip the new variant. In practice a new variant also
+    /// forces a new arm in [`Self::generate`], whose `match` is exhaustive,
+    /// and it is hard to do that and not notice [`Self::iter`] right below.
+    ///
+    /// What this constant does guarantee is that [`Self::iter`] and the
+    /// weight arrays in [`crate::generator::config`] never disagree on the
+    /// number of generators.
+    pub(super) const VARIANT_COUNT: usize = 13;
+
     pub fn generate(&self, ctx: &mut FunctionGenCtx, budget: u32) -> Option<(Statement, u32)> {
         match self {
             Self::Atomic => AtomicGenerator::generate(ctx, budget),
@@ -50,7 +64,7 @@ impl StatementGenerators {
 
     pub fn iter() -> impl Iterator<Item = StatementGenerators> {
         use StatementGenerators as SG;
-        static VALUES: [SG; std::mem::variant_count::<SG>()] = [
+        static VALUES: [SG; StatementGenerators::VARIANT_COUNT] = [
             SG::Atomic,
             SG::Barrier,
             SG::Block,
@@ -475,17 +489,9 @@ impl StatementGenerator for AtomicGenerator {
         };
         let value = ctx.expr_of_type(&value_ty)?;
 
-        let atomic_funcs = [
-            AF::Add,
-            AF::And,
-            AF::ExclusiveOr,
-            AF::InclusiveOr,
-            AF::Max,
-            AF::Min,
-            AF::Subtract,
-        ];
-        assert_eq!(std::mem::variant_count::<AF>(), atomic_funcs.len() + 1);
-        let fun = *ctx.rng.choose(&atomic_funcs).unwrap();
+        // `AF::VALUES` omits `Exchange`, which carries a payload and so needs
+        // a generator of its own.
+        let fun = *ctx.rng.choose(AF::VALUES).unwrap();
 
         let ty = ctx.module.types.insert(
             Type {

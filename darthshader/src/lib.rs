@@ -1,4 +1,3 @@
-#![feature(variant_count)]
 #![deny(
     clippy::correctness,
     clippy::cast_possible_wrap,

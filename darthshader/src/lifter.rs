@@ -1,5 +1,3 @@
-#![feature(variant_count)]
-
 use std::{fs, path::PathBuf};
 
 use clap::{Arg, Command};

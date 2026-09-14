@@ -31,6 +31,7 @@ use naga::{
 use rand::{seq::IteratorRandom, Rng};
 
 use crate::ir::iter::IterFuncs;
+use crate::ir::naga_enums::NagaEnum;
 
 use super::iter::{FunctionIdentifier, StatementVisitorMut};
 
@@ -100,8 +101,7 @@ impl BinOpMutator {
     ];
 }
 const _: () = assert!(
-    std::mem::variant_count::<BinaryOperator>()
-        == BinOpMutator::BINOPS.len() + BinOpMutator::BOOLOPS.len()
+    BinaryOperator::VARIANT_COUNT == BinOpMutator::BINOPS.len() + BinOpMutator::BOOLOPS.len()
 );
 
 impl Named for BinOpMutator {
@@ -139,10 +139,6 @@ where
             return Ok(MutationResult::Skipped);
         };
 
-        assert_eq!(
-            std::mem::variant_count::<BinaryOperator>(),
-            Self::BINOPS.len() + Self::BOOLOPS.len()
-        );
         if Self::BOOLOPS.contains(op) {
             *op = *state.rand_mut().choose(&Self::BOOLOPS).unwrap();
         } else {
@@ -167,7 +163,9 @@ impl MathFuncMutator {
         Self
     }
 
-    const MATHFUNCS: [naga::MathFunction; 69] = [
+    /// Every `naga::MathFunction` except `Inverse`, which WGSL has no
+    /// syntax for.
+    const MATHFUNCS: [naga::MathFunction; naga::MathFunction::VARIANT_COUNT - 1] = [
         MathFunction::Abs,
         MathFunction::Min,
         MathFunction::Max,
@@ -275,11 +273,6 @@ where
             return Ok(MutationResult::Skipped);
         };
 
-        assert_eq!(
-            std::mem::variant_count::<MathFunction>(),
-            Self::MATHFUNCS.len() + 1
-        );
-
         *fun = *state.rand_mut().choose(&Self::MATHFUNCS).unwrap();
         Ok(MutationResult::Mutated)
     }
@@ -336,10 +329,7 @@ where
         };
 
         use naga::UnaryOperator as Uo;
-        let unaryops = &[Uo::Negate, Uo::BitwiseNot, Uo::LogicalNot];
-        assert_eq!(std::mem::variant_count::<Uo>(), unaryops.len());
-
-        *op = *state.rand_mut().choose(unaryops.iter()).unwrap();
+        *op = *state.rand_mut().choose(Uo::VALUES.iter()).unwrap();
         Ok(MutationResult::Mutated)
     }
 
@@ -1222,7 +1212,7 @@ where
                 0 => {
                     let size = if state
                         .rand_mut()
-                        .below_or_zero(std::mem::variant_count::<VectorSize>() + 1)
+                        .below_or_zero(naga::VectorSize::VARIANT_COUNT + 1)
                         == 0
                     {
                         None

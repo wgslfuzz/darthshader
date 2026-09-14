@@ -67,17 +67,17 @@ pub struct GeneratorConfig {
 
 #[derive(Debug)]
 pub struct ExpressionWeightMap {
-    pub weights: [u32; std::mem::variant_count::<ExpressionGenerators>()],
+    pub weights: [u32; ExpressionGenerators::VARIANT_COUNT],
 }
 
 #[derive(Debug)]
 pub struct ConstExpressionWeightMap {
-    pub weights: [u32; std::mem::variant_count::<ConstExpressionGenerators>()],
+    pub weights: [u32; ConstExpressionGenerators::VARIANT_COUNT],
 }
 
 #[derive(Debug)]
 pub struct StatementWeightMap {
-    pub weights: [u32; std::mem::variant_count::<StatementGenerators>()],
+    pub weights: [u32; StatementGenerators::VARIANT_COUNT],
 }
 
 impl<'de> Deserialize<'de> for StatementWeightMap {
@@ -97,7 +97,7 @@ impl<'de> Deserialize<'de> for StatementWeightMap {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut weights = [None; std::mem::variant_count::<StatementGenerators>()];
+                let mut weights = [None; StatementGenerators::VARIANT_COUNT];
                 while let Some(key) = map.next_key::<StatementGenerators>()? {
                     weights[key as usize] = Some(map.next_value()?);
                 }
@@ -131,7 +131,7 @@ impl<'de> Deserialize<'de> for ConstExpressionWeightMap {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut weights = [None; std::mem::variant_count::<ConstExpressionGenerators>()];
+                let mut weights = [None; ConstExpressionGenerators::VARIANT_COUNT];
                 while let Some(key) = map.next_key::<ConstExpressionGenerators>()? {
                     weights[key as usize] = Some(map.next_value()?);
                 }
@@ -165,7 +165,7 @@ impl<'de> Deserialize<'de> for ExpressionWeightMap {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut weights = [None; std::mem::variant_count::<ExpressionGenerators>()];
+                let mut weights = [None; ExpressionGenerators::VARIANT_COUNT];
                 while let Some(key) = map.next_key::<ExpressionGenerators>()? {
                     weights[key as usize] = Some(map.next_value()?);
                 }
@@ -184,7 +184,7 @@ impl<'de> Deserialize<'de> for ExpressionWeightMap {
 
 impl Default for ExpressionWeightMap {
     fn default() -> Self {
-        let mut weights = [None; std::mem::variant_count::<ExpressionGenerators>()];
+        let mut weights = [None; ExpressionGenerators::VARIANT_COUNT];
         weights[ExpressionGenerators::Access as usize] = Some(1);
         weights[ExpressionGenerators::AccessIndex as usize] = Some(1);
         weights[ExpressionGenerators::ArrayLength as usize] = Some(1);
@@ -213,7 +213,7 @@ impl Default for ExpressionWeightMap {
 
 impl Default for ConstExpressionWeightMap {
     fn default() -> Self {
-        let mut weights = [None; std::mem::variant_count::<ConstExpressionGenerators>()];
+        let mut weights = [None; ConstExpressionGenerators::VARIANT_COUNT];
         weights[ConstExpressionGenerators::Compose as usize] = Some(1);
         weights[ConstExpressionGenerators::Constant as usize] = Some(1);
         weights[ConstExpressionGenerators::Literal as usize] = Some(1);
@@ -227,7 +227,7 @@ impl Default for ConstExpressionWeightMap {
 
 impl Default for StatementWeightMap {
     fn default() -> Self {
-        let mut weights = [None; std::mem::variant_count::<StatementGenerators>()];
+        let mut weights = [None; StatementGenerators::VARIANT_COUNT];
         weights[StatementGenerators::Atomic as usize] = Some(1);
         weights[StatementGenerators::Barrier as usize] = Some(1);
         weights[StatementGenerators::Block as usize] = Some(1);
