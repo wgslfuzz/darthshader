@@ -425,30 +425,37 @@ where
 
                 let replace_result = |block: &mut Block| {
                     for (idx, stmt) in block.iter().enumerate() {
-                        if !matches!(
-                            stmt,
-                            Statement::Call { .. }
-                                | Statement::Atomic { .. }
-                                | Statement::WorkGroupUniformLoad { .. }
-                        ) {
-                            continue;
-                        }
+                        // Spelled out rather than written as `_` so that a naga
+                        // release adding a `Statement` variant breaks the build here
+                        // instead of silently skipping a statement that might carry a
+                        // result.
+                        let candidate = match stmt {
+                            Statement::Call {
+                                function, result, ..
+                            } => ResultStatement::Call(*function, *result),
+                            Statement::Atomic { result, .. } => ResultStatement::Atomic(*result),
+                            Statement::WorkGroupUniformLoad { result, .. } => {
+                                ResultStatement::WorkgroupLoad(*result)
+                            }
+                            Statement::Emit(..)
+                            | Statement::Block(..)
+                            | Statement::If { .. }
+                            | Statement::Switch { .. }
+                            | Statement::Loop { .. }
+                            | Statement::Break
+                            | Statement::Continue
+                            | Statement::Return { .. }
+                            | Statement::Kill
+                            | Statement::Barrier(..)
+                            | Statement::Store { .. }
+                            | Statement::ImageStore { .. }
+                            | Statement::RayQuery { .. } => continue,
+                        };
                         if countdown != 0 {
                             countdown -= 1;
                             continue;
                         }
-                        result_stmt = match stmt {
-                            Statement::Call {
-                                function, result, ..
-                            } => Some(ResultStatement::Call(*function, *result)),
-                            Statement::Atomic { result, .. } => {
-                                Some(ResultStatement::Atomic(*result))
-                            }
-                            Statement::WorkGroupUniformLoad { result, .. } => {
-                                Some(ResultStatement::WorkgroupLoad(*result))
-                            }
-                            _ => unreachable!(),
-                        };
+                        result_stmt = Some(candidate);
                         block.cull(idx..=idx);
                         return false;
                     }
