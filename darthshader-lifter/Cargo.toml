@@ -1,0 +1,17 @@
+[package]
+name = "darthshader-lifter"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[[bin]]
+name = "lifter"
+path = "src/main.rs"
+
+[dependencies]
+clap = "4"
+darthshader = { path = "../darthshader" }
+libafl = { version = "0.15.4", features = ["default", "introspection"] }
+libafl_bolts = "0.15.4"
+ron = "0.8"
