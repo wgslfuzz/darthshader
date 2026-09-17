@@ -13,13 +13,8 @@ readme = "../README.md"
 name = "darthshader"
 path = "src/lib.rs"
 
-[[bin]]
-name = "lifter"
-path = "src/lifter.rs"
-
 [dependencies]
 bitflags = "1"
-clap = { version = "4", features = ["derive"] }
 libafl = { version = "0.15.4", features = ["default", "introspection"] }
 libafl_bolts = "0.15.4"
 # Only used through `libafl`'s re-exports; see the `extern crate` in lib.rs.
