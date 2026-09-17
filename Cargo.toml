@@ -4,6 +4,7 @@ cargo-features = ["profile-rustflags"]
 members = [
     "darthshader",
     "darthshader-afl",
+    "darthshader-lifter",
 ]
 # Use the edition 2021 feature resolver for the workspace.
 # Virtual workspaces default to resolver = "1", but edition 2021 members imply resolver = "2".
