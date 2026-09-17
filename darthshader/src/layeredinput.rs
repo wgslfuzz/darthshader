@@ -285,6 +285,7 @@ impl Input for LayeredInput {
             .ok_or_else(|| {
                 Error::illegal_argument(format!("illegal extension: {:?}", path.as_ref()))
             })? {
+            #[cfg(feature = "spv-in")]
             "spv" => {
                 let options = naga::front::spv::Options {
                     adjust_coordinate_space: true,
@@ -294,6 +295,7 @@ impl Input for LayeredInput {
                 naga::front::spv::parse_u8_slice(input.as_bytes(), &options)
                     .map_err(|e| Error::illegal_argument(e.to_string()))?
             }
+            #[cfg(feature = "glsl-in")]
             ext @ ("vert" | "frag" | "comp") => {
                 let mut parser = naga::front::glsl::Frontend::default();
                 parser
