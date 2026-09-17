@@ -14,8 +14,13 @@ name = "darthshader"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["link-cplusplus"]
 glsl-in = ["naga/glsl-in"]
+# tree-sitter-wgsl's scanner is C++, so the C++ runtime has to be linked in.
+# This pulls it in for plain cargo builds. Turn it off only if your build
+# system links the C++ runtime itself: without it, cargo can still produce the
+# rlib, but linking any binary or test from this crate will fail.
+link-cplusplus = ["dep:link-cplusplus"]
 spv-in = ["naga/spv-in"]
 
 [dependencies]
@@ -24,7 +29,7 @@ libafl = { version = "0.15.4", features = ["default", "introspection"] }
 libafl_bolts = "0.15.4"
 # Only used through `libafl`'s re-exports; see the `extern crate` in lib.rs.
 libafl_derive = "0.15.4"
-link-cplusplus = "1.0"
+link-cplusplus = { version = "1.0", optional = true }
 log = "0.4"
 naga = { version = "0.14", features = ["wgsl-in", "wgsl-out", "serialize", "deserialize", "clone"] }
 rand = { version = "0.9", features = ["small_rng"] }

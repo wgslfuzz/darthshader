@@ -8,6 +8,7 @@
 )]
 #![recursion_limit = "256"]
 
+#[cfg(feature = "link-cplusplus")]
 extern crate link_cplusplus;
 
 // `libafl` re-exports the derive macros from `libafl_derive`, so `libafl_derive`
