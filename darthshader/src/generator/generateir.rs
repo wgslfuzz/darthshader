@@ -1209,3 +1209,79 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct SeededState(StdRand);
+    impl HasRand for SeededState {
+        type Rand = StdRand;
+        fn rand(&self) -> &Self::Rand {
+            &self.0
+        }
+        fn rand_mut(&mut self) -> &mut Self::Rand {
+            &mut self.0
+        }
+    }
+
+    const GENERATION_COUNT: u64 = 500;
+
+    // Baseline measurements taken on 2026-09-17 with naga 0.14.2 and GeneratorConfig::default():
+    // Ten consecutive runs of 100 iterations yielded success counts of:
+    //   87, 84, 86, 84, 87, 87, 87, 86, 93, 87 (mean: 86.8%).
+    // Note that this baseline was measured with module validation effectively disabled,
+    // because `ValidationFlags::all()` evaluates to 0 on naga 0.14.2 — the flag constants
+    // are gated behind a `validate` feature this crate does not enable.
+    // The threshold below is deliberately set as a safety floor with margin below the worst
+    // observed run (84%), rather than an estimate of the true rate. The success rate is
+    // expected to rise on a future naga upgrade as back-end emission issues are addressed.
+    const MIN_SUCCESS_PERCENT: u64 = 75;
+
+    /// Verifies that the IR generator produces modules that successfully emit and re-parse as WGSL.
+    ///
+    /// Why this test exists:
+    /// `IRGenerator::generate` silently swallows generation, validation, and re-parsing failures,
+    /// returning `Ok(LayeredInput::Ast(<empty>))` on error. A broken generator producing only
+    /// empty AST fallbacks is therefore indistinguishable from a healthy one at all call sites.
+    /// This test turns that silent degradation into an explicit, monitored health measurement.
+    ///
+    /// Run with `cargo +nightly test -p darthshader -- --nocapture` to inspect the emitted success rate.
+    #[test]
+    fn generator_emits_reparsable_wgsl() {
+        let mut generator = IRGenerator::new(GeneratorConfig::default());
+        let mut successes = 0u64;
+        let mut failing_seeds = Vec::new();
+
+        // Note: the seed narrows a failure down but does not fully guarantee reproducibility,
+        // because `ExprScope::matching` and `ExprScope::any` (`ir/exprscope.rs:214`, `:255`)
+        // clock-seed a fresh RNG per call.
+        for seed in 0..GENERATION_COUNT {
+            let mut state = SeededState(StdRand::with_seed(seed));
+            match generator
+                .generate(&mut state)
+                .expect("IRGenerator::generate should never return Err")
+            {
+                LayeredInput::IR(_) => successes += 1,
+                LayeredInput::Ast(_) => failing_seeds.push(seed),
+            }
+        }
+
+        let pct = (successes * 100) / GENERATION_COUNT;
+        println!(
+            "generated {successes}/{GENERATION_COUNT} modules that emit re-parsable WGSL ({pct}%)"
+        );
+
+        let capped_failing: Vec<_> = failing_seeds.iter().copied().take(20).collect();
+        let truncated = if failing_seeds.len() > 20 {
+            format!(" (truncated, showing first 20 of {})", failing_seeds.len())
+        } else {
+            String::new()
+        };
+
+        assert!(
+            successes * 100 >= GENERATION_COUNT * MIN_SUCCESS_PERCENT,
+            "Generator success rate below threshold: {successes}/{GENERATION_COUNT} ({pct}% < {MIN_SUCCESS_PERCENT}%). Failing seeds{truncated}: {capped_failing:?}"
+        );
+    }
+}
