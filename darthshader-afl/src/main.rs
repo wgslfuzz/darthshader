@@ -38,8 +38,7 @@ use libafl_bolts::{
     rands::{Rand, StdRand},
     shmem::{unix_shmem::UnixShMem, ShMem, ShMemProvider, UnixShMemProvider},
     tuples::{tuple_list, Handled},
-    SimpleStdoutLogger,
-    StdTargetArgs,
+    SimpleStdoutLogger, StdTargetArgs,
 };
 
 use nix::sys::signal::Signal;
