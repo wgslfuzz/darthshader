@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.77"
 
 [dependencies]
-darthshader = { path = "../darthshader" }
+darthshader = { path = "../darthshader", features = ["glsl-in", "spv-in"] }
 mimalloc = { version = "*", default-features = false }
 clap = { version = "4", features = ["derive"] }
 serde_yaml = "0.9"

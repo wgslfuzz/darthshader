@@ -13,6 +13,11 @@ readme = "../README.md"
 name = "darthshader"
 path = "src/lib.rs"
 
+[features]
+default = []
+glsl-in = ["naga/glsl-in"]
+spv-in = ["naga/spv-in"]
+
 [dependencies]
 bitflags = "1"
 libafl = { version = "0.15.4", features = ["default", "introspection"] }
@@ -21,7 +26,7 @@ libafl_bolts = "0.15.4"
 libafl_derive = "0.15.4"
 link-cplusplus = "1.0"
 log = "0.4"
-naga = { version = "0.14", features = ["wgsl-in", "glsl-in", "spv-in", "glsl-out", "wgsl-out", "serialize", "deserialize", "clone"] }
+naga = { version = "0.14", features = ["wgsl-in", "wgsl-out", "serialize", "deserialize", "clone"] }
 rand = { version = "0.9", features = ["small_rng"] }
 ron = "0.8"
 serde = "1"
