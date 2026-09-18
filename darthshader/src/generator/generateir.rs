@@ -1284,4 +1284,129 @@ mod tests {
             "Generator success rate below threshold: {successes}/{GENERATION_COUNT} ({pct}% < {MIN_SUCCESS_PERCENT}%). Failing seeds{truncated}: {capped_failing:?}"
         );
     }
+
+    /// Baseline convergence floor for multi-generation round trips.
+    ///
+    /// Measured on 2026-09-18 with naga 0.14.2 and `GeneratorConfig::default()` over 3 runs of n=500:
+    /// - Convergence histogram: k=1 25.8%, k=2 40.2%, k=3 27.0%, k=4 4.8%, unconverged 2.1%
+    ///   (cumulative: 93.1% by k=3, 97.9% by k=4).
+    /// - Zero oscillations observed across 1,143 evaluated modules.
+    ///
+    /// This threshold is a conservative floor with margin to catch degradation regressions,
+    /// not an estimate of the true convergence rate.
+    const MIN_CONVERGENCE_PERCENT: u64 = 90;
+    const ROUND_TRIP_COUNT: usize = 4;
+
+    /// Tests that repeated WGSL emit -> parse -> emit round trips converge to a textual fixpoint.
+    ///
+    /// The round trip is **not** a one-step fixpoint — only ~25% of modules are byte-identical
+    /// after a single round trip — because `front::wgsl` canonicalises input during parsing:
+    /// it folds constant expressions, canonicalises vector index accesses (e.g. `v[0]` -> `v.x`),
+    /// and renumbers expression handles. Because those canonicalisations are idempotent, the
+    /// meaningful semantic and syntactic property across round trips is **convergence**.
+    ///
+    /// Unlike a golden-file test, this test compares naga against itself, making it resilient
+    /// against harmless backend formatting changes. However, its coverage envelope is bounded
+    /// by the generator, so this test detects changes and regressions, not absolute correctness.
+    ///
+    /// The small non-converging remainder (~2%) is dominantly caused by naga's namer appending
+    /// a disambiguating underscore on successive passes (observed: `_e24` -> `_e24_`, and
+    /// `_e113` -> `_e113_1`).
+    ///
+    /// Shaders that parse once but fail a subsequent round-trip parse are counted as `degraded`
+    /// and treated as evaluated but non-converged, ensuring mid-chain parse regressions directly
+    /// trip the convergence threshold.
+    #[test]
+    fn generator_round_trip_converges() {
+        let mut generator = IRGenerator::new(GeneratorConfig::default());
+        let mut generated = 0u64;
+        let mut evaluated = 0u64;
+        let mut converged = 0u64;
+        let mut degraded = 0u64;
+        let mut non_converged_seeds = Vec::new();
+
+        for seed in 0..GENERATION_COUNT {
+            let mut state = SeededState(StdRand::with_seed(seed));
+            let ir = match generator
+                .generate(&mut state)
+                .expect("IRGenerator::generate should never return Err")
+            {
+                LayeredInput::IR(ir) => {
+                    generated += 1;
+                    ir
+                }
+                LayeredInput::Ast(_) => continue,
+            };
+
+            let mut text = match ir.try_get_text() {
+                Ok(t) => t.clone(),
+                Err(_) => continue,
+            };
+
+            let mut was_evaluated = false;
+            let mut is_converged = false;
+
+            for round in 0..ROUND_TRIP_COUNT {
+                let next_ir = match IR::try_from(text.as_str()) {
+                    Ok(ir) => ir,
+                    Err(_) => {
+                        if round > 0 {
+                            degraded += 1;
+                        }
+                        break;
+                    }
+                };
+                let next_text = match next_ir.try_get_text() {
+                    Ok(t) => t.clone(),
+                    Err(_) => {
+                        if round > 0 {
+                            degraded += 1;
+                        }
+                        break;
+                    }
+                };
+
+                if round == 0 {
+                    evaluated += 1;
+                    was_evaluated = true;
+                }
+
+                if next_text == text {
+                    converged += 1;
+                    is_converged = true;
+                    break;
+                }
+                text = next_text;
+            }
+
+            if was_evaluated && !is_converged {
+                non_converged_seeds.push(seed);
+            }
+        }
+
+        let pct = if evaluated > 0 {
+            (converged * 100) / evaluated
+        } else {
+            0
+        };
+
+        println!(
+            "round-trip convergence: generated {generated}, evaluated {evaluated}, converged {converged} ({pct}%), degraded {degraded}"
+        );
+
+        let capped_non_converged: Vec<_> = non_converged_seeds.iter().copied().take(10).collect();
+        let truncated = if non_converged_seeds.len() > 10 {
+            format!(
+                " (truncated, showing first 10 of {})",
+                non_converged_seeds.len()
+            )
+        } else {
+            String::new()
+        };
+
+        assert!(
+            evaluated > 0 && converged * 100 >= evaluated * MIN_CONVERGENCE_PERCENT,
+            "Round-trip convergence below threshold: {converged}/{evaluated} ({pct}% < {MIN_CONVERGENCE_PERCENT}%). Generated: {generated}, degraded: {degraded}. Non-converged seeds{truncated}: {capped_non_converged:?}"
+        );
+    }
 }
