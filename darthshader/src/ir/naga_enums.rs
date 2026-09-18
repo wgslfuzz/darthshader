@@ -246,8 +246,8 @@ impl NagaEnum for MathFunction {
         Self::ReverseBits,
         Self::ExtractBits,
         Self::InsertBits,
-        Self::FindLsb,
-        Self::FindMsb,
+        Self::FirstTrailingBit,
+        Self::FirstLeadingBit,
         Self::Pack4x8snorm,
         Self::Pack4x8unorm,
         Self::Pack2x16snorm,
@@ -331,8 +331,8 @@ const _: () = {
             ReverseBits => {}
             ExtractBits => {}
             InsertBits => {}
-            FindLsb => {}
-            FindMsb => {}
+            FirstTrailingBit => {}
+            FirstLeadingBit => {}
             Pack4x8snorm => {}
             Pack4x8unorm => {}
             Pack2x16snorm => {}
@@ -343,6 +343,8 @@ const _: () = {
             Unpack2x16snorm => {}
             Unpack2x16unorm => {}
             Unpack2x16float => {}
+            Dot4I8Packed | Dot4U8Packed | QuantizeToF16 | Pack4xI8 | Pack4xU8 | Pack4xI8Clamp
+            | Pack4xU8Clamp | Unpack4xI8 | Unpack4xU8 => {}
         }
     }
 };
@@ -367,6 +369,7 @@ const _: () = {
             Vertex => {}
             Fragment => {}
             Compute => {}
+            Task | Mesh => {}
         }
     }
 };

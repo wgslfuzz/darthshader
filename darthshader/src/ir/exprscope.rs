@@ -177,7 +177,10 @@ impl ExprScope {
                                 result: Some(result),
                                 ..
                             }
-                            | Statement::Atomic { result, .. }
+                            | Statement::Atomic {
+                                result: Some(result),
+                                ..
+                            }
                             | Statement::WorkGroupUniformLoad { result, .. }
                             | Statement::RayQuery {
                                 fun: RayQueryFunction::Proceed { result },
@@ -271,7 +274,7 @@ impl ExprScope {
         let (resolve_ctx, exprs) = match self.fid {
             None => (
                 ResolveContext::with_locals(module, &dummy_local_vars, &[]),
-                &module.const_expressions,
+                &module.global_expressions,
             ),
             Some(func) => {
                 let func = match func {

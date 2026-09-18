@@ -410,7 +410,10 @@ where
                 if matches!(
                     stmt,
                     Statement::Call { .. }
-                        | Statement::Atomic { .. }
+                        | Statement::Atomic {
+                            result: Some(_),
+                            ..
+                        }
                         | Statement::WorkGroupUniformLoad { .. }
                 ) {
                     results += 1;
@@ -428,7 +431,10 @@ where
                         if !matches!(
                             stmt,
                             Statement::Call { .. }
-                                | Statement::Atomic { .. }
+                                | Statement::Atomic {
+                                    result: Some(_),
+                                    ..
+                                }
                                 | Statement::WorkGroupUniformLoad { .. }
                         ) {
                             continue;
@@ -441,9 +447,10 @@ where
                             Statement::Call {
                                 function, result, ..
                             } => Some(ResultStatement::Call(*function, *result)),
-                            Statement::Atomic { result, .. } => {
-                                Some(ResultStatement::Atomic(*result))
-                            }
+                            Statement::Atomic {
+                                result: Some(result),
+                                ..
+                            } => Some(ResultStatement::Atomic(*result)),
                             Statement::WorkGroupUniformLoad { result, .. } => {
                                 Some(ResultStatement::WorkgroupLoad(*result))
                             }
@@ -760,7 +767,7 @@ where
             }
             let visitor = |stmt: &Statement| {
                 if let Statement::Emit(range) = stmt {
-                    assert_eq!(range.zero_based_index_range().len(), 1);
+                    assert_eq!(range.index_range().len(), 1);
                 } else {
                     for handle in stmt.iter_used_exprs() {
                         if unused[handle.index()] {
@@ -1015,7 +1022,7 @@ where
         };
 
         let mut rng = StdRand::with_seed(state.rand_mut().next());
-        let mut unused = vec![true; ir.get_module().const_expressions.len()];
+        let mut unused = vec![true; ir.get_module().global_expressions.len()];
         for handle in ir
             .iter_funcs()
             .flat_map(|(_, func)| func.expressions.iter())
@@ -1033,7 +1040,7 @@ where
             }
         }
 
-        for (_, expr) in ir.get_module().const_expressions.iter() {
+        for (_, expr) in ir.get_module().global_expressions.iter() {
             for handle in expr.iter_used_exprs() {
                 unused[handle.index()] = false;
             }
@@ -1054,14 +1061,14 @@ where
 
         let mut mapping: Vec<_> = ir
             .get_module()
-            .const_expressions
+            .global_expressions
             .iter()
             .map(|(handle, _)| Some(handle))
             .collect();
         mapping.pop().unwrap();
         mapping.insert(idx, None);
 
-        for (_, expr) in ir.get_module_mut().const_expressions.iter_mut() {
+        for (_, expr) in ir.get_module_mut().global_expressions.iter_mut() {
             for handle in expr.iter_used_exprs_mut() {
                 *handle = mapping[handle.index()].unwrap();
             }
@@ -1091,14 +1098,14 @@ where
             }
         }
 
-        let old_exprs = std::mem::take(&mut ir.get_module_mut().const_expressions);
+        let old_exprs = std::mem::take(&mut ir.get_module_mut().global_expressions);
         let mut old_exprs = old_exprs.into_inner();
         old_exprs.remove(idx);
         let mut new_exprs: Arena<Expression> = Default::default();
         for expr in old_exprs.into_iter() {
             new_exprs.append(expr, Span::UNDEFINED);
         }
-        ir.get_module_mut().const_expressions = new_exprs;
+        ir.get_module_mut().global_expressions = new_exprs;
 
         Ok(MutationResult::Mutated)
     }
