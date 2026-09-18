@@ -2,7 +2,7 @@
 name = "darthshader"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 description = "A library for building WebGPU shader compilation pipeline fuzzers"
 license = "Apache-2.0"
 license-file = "../LICENSE"
@@ -38,7 +38,8 @@ serde = "1"
 smallvec = "1"
 tinystr = { version = "0.7", features = ["serde"] }
 tinyvec = { version = "1", features = ["serde"] }
-tree-sitter = "0.21"
+tree-sitter = "0.26"
+tree-sitter-language = "0.1"
 
 [build-dependencies]
 cc = "1.2"

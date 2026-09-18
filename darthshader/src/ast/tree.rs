@@ -12,11 +12,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tinystr::TinyAsciiStr;
 use tinyvec::ArrayVec;
 use tree_sitter::{Language, Parser, TreeCursor};
+use tree_sitter_language::LanguageFn;
 
 use crate::dictionary;
 
 extern "C" {
-    fn tree_sitter_wgsl() -> Language;
+    fn tree_sitter_wgsl() -> *const ();
 }
 
 static ATOMS: LazyLock<[&'static str; 301]> = LazyLock::new(|| {
@@ -27,7 +28,8 @@ static ATOMS: LazyLock<[&'static str; 301]> = LazyLock::new(|| {
         .expect("Length of array must match size of dictionary.")
 });
 
-static WGSLLANGUAGE: LazyLock<Language> = LazyLock::new(|| unsafe { tree_sitter_wgsl() });
+static WGSLLANGUAGE: LazyLock<Language> =
+    LazyLock::new(|| Language::new(unsafe { LanguageFn::from_raw(tree_sitter_wgsl) }));
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub struct ASTHandle(u32);
