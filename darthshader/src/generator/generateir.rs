@@ -1227,6 +1227,52 @@ mod tests {
 
     const GENERATION_COUNT: u64 = 500;
 
+    struct MutatorTestState {
+        rand: StdRand,
+        corpus: libafl::corpus::InMemoryCorpus<LayeredInput>,
+        current_corpus_id: Option<libafl::corpus::CorpusId>,
+    }
+
+    impl HasRand for MutatorTestState {
+        type Rand = StdRand;
+
+        fn rand(&self) -> &Self::Rand {
+            &self.rand
+        }
+
+        fn rand_mut(&mut self) -> &mut Self::Rand {
+            &mut self.rand
+        }
+    }
+
+    impl libafl::state::HasCorpus<LayeredInput> for MutatorTestState {
+        type Corpus = libafl::corpus::InMemoryCorpus<LayeredInput>;
+
+        fn corpus(&self) -> &Self::Corpus {
+            &self.corpus
+        }
+
+        fn corpus_mut(&mut self) -> &mut Self::Corpus {
+            &mut self.corpus
+        }
+    }
+
+    impl libafl::corpus::HasCurrentCorpusId for MutatorTestState {
+        fn current_corpus_id(&self) -> Result<Option<libafl::corpus::CorpusId>, libafl::Error> {
+            Ok(self.current_corpus_id)
+        }
+
+        fn set_corpus_id(&mut self, id: libafl::corpus::CorpusId) -> Result<(), libafl::Error> {
+            self.current_corpus_id = Some(id);
+            Ok(())
+        }
+
+        fn clear_corpus_id(&mut self) -> Result<(), libafl::Error> {
+            self.current_corpus_id = None;
+            Ok(())
+        }
+    }
+
     // Baseline measurements taken on 2026-09-17 with naga 0.14.2 and GeneratorConfig::default():
     // Ten consecutive runs of 100 iterations yielded success counts of:
     //   87, 84, 86, 84, 87, 87, 87, 86, 93, 87 (mean: 86.8%).
@@ -1407,6 +1453,278 @@ mod tests {
         assert!(
             evaluated > 0 && converged * 100 >= evaluated * MIN_CONVERGENCE_PERCENT,
             "Round-trip convergence below threshold: {converged}/{evaluated} ({pct}% < {MIN_CONVERGENCE_PERCENT}%). Generated: {generated}, degraded: {degraded}. Non-converged seeds{truncated}: {capped_non_converged:?}"
+        );
+    }
+
+    /// Number of generated modules that every mutator is applied to.
+    ///
+    /// This test applies all ten mutators to each seed, so it is ten times the work per seed
+    /// that the generation tests are. 250 keeps it near two seconds while still giving each
+    /// mutator roughly 190 mutations per run.
+    const MUTATION_SEED_COUNT: u64 = 250;
+
+    const AGGREGATE_MUTATION_FLOOR: u64 = 85;
+
+    /// Per-mutator floors for the fraction of mutated modules that still emit WGSL.
+    ///
+    /// The keys are the names the mutators report at runtime, which are not their type names.
+    /// The mapping is: `IRStatementInputMutator (untyped)` is `RewireStatementMutator`,
+    /// `IRRewireExpressionMutator (untyped)` is `RewireExpressionMutator`, and `IRBinOPMutator`
+    /// is `BinOpMutator`; the rest correspond by inspection. A mutator whose reported name is
+    /// absent from this table fails the test, so adding one to `ir_mutations()` cannot leave it
+    /// silently unmeasured.
+    ///
+    /// Measured 2026-09-18 with naga 0.14.2 and `GeneratorConfig::default()`, over 3 runs of
+    /// n=500 (10,126 mutations, zero mutator errors):
+    /// - `UnaryOpMutator`: 100.0% measured -> floor 90%
+    /// - `BinOpMutator`: 100.0% measured -> floor 90%
+    /// - `LiteralMutator`: 100.0% measured -> floor 90%
+    /// - `RewireStatementMutator`: 100.0% measured -> floor 90%
+    /// - `TypeMutator`: 100.0% measured -> floor 90%
+    /// - `CodeGenerationMutation`: 100.0% measured -> floor 90%
+    /// - `FullGenerationMutation`: 100.0% measured -> floor 90%
+    /// - `StatementMutator`: 97.8% measured -> floor 85%
+    /// - `MathFuncMutator`: 80.6% measured -> floor 60%
+    /// - `RewireExpressionMutator`: 54.3% measured -> floor 35%
+    /// - Aggregate: 94.0% measured -> floor 85%
+    ///
+    /// At the n=250 this test actually runs, five runs gave a wider spread, as expected from the
+    /// smaller sample: `StatementMutator` 95-98%, `MathFuncMutator` 81-85%,
+    /// `RewireExpressionMutator` 48-64%, aggregate 93-95%, and the other seven at 100% throughout.
+    ///
+    /// Floors sit 10–20 points below measurement because these rates are expected to fall,
+    /// not rise, on a naga upgrade: `try_get_text()` already reports validation failures today
+    /// even though `ValidationFlags::all()` is 0, so handle validation and type resolution run
+    /// regardless of the flags and the flags gate additional checks. Enabling them can only
+    /// reject more mutated modules.
+    ///
+    /// `RewireExpressionMutator` is wired as `new(false)`, untyped, in production. Its ~46%
+    /// invalid rate is the mutator working as designed — it deliberately rewires operands without
+    /// regard to type compatibility. Not a defect.
+    ///
+    /// Observed failure mechanisms:
+    /// - `StatementMutator`: deleting a `break` to leave a fall-through switch case, which WGSL forbids.
+    /// - `MathFuncMutator`: swapping same-arity math functions across incompatible type domains.
+    const MUTATOR_FLOORS: &[(&str, u64)] = &[
+        ("IRUnaryOpMutator", 90),
+        ("IRBinOPMutator", 90),
+        ("IRMathFuncMutator", 60),
+        ("IRLiteralMutator", 90),
+        ("IRRewireExpressionMutator (untyped)", 35),
+        ("IRStatementInputMutator (untyped)", 90),
+        ("IRStatementMutator", 85),
+        ("IRTypeMutator", 90),
+        ("IRFullGenerationMutation", 90),
+        ("IRCodeGenerationMutation", 90),
+    ];
+
+    fn lookup_mutator_floor(name: &str) -> Option<u64> {
+        for &(n, floor) in MUTATOR_FLOORS {
+            if n == name {
+                return Some(floor);
+            }
+        }
+        None
+    }
+
+    /// Tests that production IR mutators produce valid, emittable WGSL at expected rates.
+    ///
+    /// While `generator_emits_reparsable_wgsl` (T2b) establishes that the generator produces
+    /// valid and re-parsable WGSL, this test covers the mutation pipeline (T2a). Generation
+    /// and mutation fail for different reasons and would be broken independently by a naga upgrade.
+    ///
+    /// Per-mutator floors are enforced because an aggregate metric alone would hide a collapse
+    /// in an individual mutator: a 100% -> 60% regression in one mutator shifts the aggregate
+    /// rate by only about four percentage points.
+    #[test]
+    fn mutators_emit_valid_wgsl() {
+        use crate::ir::mutate::ir_mutations;
+        use libafl::corpus::{CorpusId, InMemoryCorpus};
+        use libafl::mutators::{MutationId, MutationResult, MutatorsTuple};
+        use libafl_bolts::tuples::NamedTuple;
+        use libafl_bolts::HasLen;
+        use std::collections::BTreeMap;
+
+        let mut generator = IRGenerator::new(GeneratorConfig::default());
+        let mut mutators = ir_mutations();
+        let num_mutators = mutators.len();
+        let mutator_names = mutators.names();
+
+        for name in &mutator_names {
+            assert!(
+                lookup_mutator_floor(name).is_some(),
+                "Mutator '{name}' present in ir_mutations() is missing from MUTATOR_FLOORS table. A floor must be defined for any new mutator."
+            );
+        }
+
+        #[derive(Default)]
+        struct MutStats {
+            skipped: u64,
+            errored: u64,
+            mutated: u64,
+            emits_wgsl: u64,
+            errors: BTreeMap<String, u64>,
+        }
+
+        let mut stats: Vec<MutStats> = (0..num_mutators).map(|_| MutStats::default()).collect();
+
+        for seed in 0..MUTATION_SEED_COUNT {
+            let mut state = MutatorTestState {
+                rand: StdRand::with_seed(seed),
+                corpus: InMemoryCorpus::new(),
+                current_corpus_id: Some(CorpusId::from(seed as usize)),
+            };
+
+            let ir = match generator
+                .generate(&mut state)
+                .expect("IRGenerator::generate should never return Err")
+            {
+                LayeredInput::IR(ir) => ir,
+                LayeredInput::Ast(_) => continue,
+            };
+
+            for (idx, stat) in stats.iter_mut().enumerate().take(num_mutators) {
+                let mut input = LayeredInput::IR(ir.clone());
+                match mutators.get_and_mutate(MutationId::from(idx), &mut state, &mut input) {
+                    Ok(MutationResult::Skipped) => {
+                        stat.skipped += 1;
+                    }
+                    Ok(MutationResult::Mutated) => {
+                        // An IR mutator is not expected to change the input's layer. If one
+                        // ever does, count it once as an error rather than as a mutation, and
+                        // name it distinctly so it is not mistaken for a WGSL emission failure.
+                        let LayeredInput::IR(ref mut_ir) = input else {
+                            stat.errored += 1;
+                            *stat
+                                .errors
+                                .entry("mutator returned a non-IR input".to_string())
+                                .or_insert(0) += 1;
+                            continue;
+                        };
+                        stat.mutated += 1;
+                        match mut_ir.try_get_text() {
+                            Ok(_) => {
+                                stat.emits_wgsl += 1;
+                            }
+                            Err(e) => {
+                                let mut first_line = e.clone();
+                                if let Some(pos) = first_line.find('\n') {
+                                    first_line.truncate(pos);
+                                }
+                                *stat.errors.entry(first_line).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        stat.errored += 1;
+                        let err_str = format!("Mutator error: {e}");
+                        *stat.errors.entry(err_str).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+
+        println!(
+            "{:<36} | {:>7} | {:>7} | {:>7} | {:>10} | {:>10} | {:>9}",
+            "Mutator", "Skipped", "Errored", "Mutated", "Emits WGSL", "Rate (%)", "Floor (%)"
+        );
+        println!(
+            "{:-<36}-+-{:-<7}-+-{:-<7}-+-{:-<7}-+-{:-<10}-+-{:-<10}-+-{:-<9}",
+            "", "", "", "", "", "", ""
+        );
+
+        let mut agg_skipped = 0u64;
+        let mut agg_errored = 0u64;
+        let mut agg_mutated = 0u64;
+        let mut agg_emits = 0u64;
+
+        for (idx, name) in mutator_names.iter().enumerate() {
+            let s = &stats[idx];
+            let total_attempts = s.mutated + s.errored;
+            let rate = (s.emits_wgsl * 100)
+                .checked_div(total_attempts)
+                .unwrap_or(0);
+            let floor = lookup_mutator_floor(name).unwrap_or(0);
+            println!(
+                "{:<36} | {:>7} | {:>7} | {:>7} | {:>10} | {:>9}% | {:>8}%",
+                name, s.skipped, s.errored, s.mutated, s.emits_wgsl, rate, floor
+            );
+            agg_skipped += s.skipped;
+            agg_errored += s.errored;
+            agg_mutated += s.mutated;
+            agg_emits += s.emits_wgsl;
+        }
+
+        let total_agg_attempts = agg_mutated + agg_errored;
+        let agg_rate = (agg_emits * 100)
+            .checked_div(total_agg_attempts)
+            .unwrap_or(0);
+        println!(
+            "{:-<36}-+-{:-<7}-+-{:-<7}-+-{:-<7}-+-{:-<10}-+-{:-<10}-+-{:-<9}",
+            "", "", "", "", "", "", ""
+        );
+        println!(
+            "{:<36} | {:>7} | {:>7} | {:>7} | {:>10} | {:>9}% | {:>8}%",
+            "AGGREGATE",
+            agg_skipped,
+            agg_errored,
+            agg_mutated,
+            agg_emits,
+            agg_rate,
+            AGGREGATE_MUTATION_FLOOR
+        );
+
+        let mut failures = Vec::new();
+
+        // 1. Assert every mutator produced at least one Mutated
+        for (idx, name) in mutator_names.iter().enumerate() {
+            if stats[idx].mutated == 0 {
+                failures.push(format!(
+                    "Mutator '{name}' produced zero mutations across {MUTATION_SEED_COUNT} seeds (always skipped)"
+                ));
+            }
+        }
+
+        // 2. Assert each mutator meets its floor
+        for (idx, name) in mutator_names.iter().enumerate() {
+            let s = &stats[idx];
+            let total_attempts = s.mutated + s.errored;
+            let rate = (s.emits_wgsl * 100)
+                .checked_div(total_attempts)
+                .unwrap_or(0);
+            let floor = lookup_mutator_floor(name).unwrap_or(0);
+            if rate < floor {
+                let err_context = if s.errors.is_empty() {
+                    String::new()
+                } else {
+                    let mut top_errs: Vec<_> = s.errors.iter().collect();
+                    top_errs.sort_by_key(|&(_, c)| std::cmp::Reverse(*c));
+                    let top: Vec<_> = top_errs
+                        .iter()
+                        .take(3)
+                        .map(|(msg, c)| format!("      [{c}] {msg}"))
+                        .collect();
+                    format!("\n    top failure reasons:\n{}", top.join("\n"))
+                };
+                failures.push(format!(
+                    "Mutator '{name}' below floor: {}/{} ({rate}% < floor {floor}%, skipped: {}, errored: {}){err_context}",
+                    s.emits_wgsl, total_attempts, s.skipped, s.errored
+                ));
+            }
+        }
+
+        // 3. Assert aggregate meets floor
+        if agg_rate < AGGREGATE_MUTATION_FLOOR {
+            failures.push(format!(
+                "AGGREGATE mutation rate below floor: {agg_emits}/{total_agg_attempts} ({agg_rate}% < floor {AGGREGATE_MUTATION_FLOOR}%, skipped: {agg_skipped}, errored: {agg_errored})"
+            ));
+        }
+
+        assert!(
+            failures.is_empty(),
+            "Mutation validity assertions failed ({} failure(s)):\n{}",
+            failures.len(),
+            failures.join("\n")
         );
     }
 }
