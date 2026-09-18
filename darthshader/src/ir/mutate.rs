@@ -25,7 +25,7 @@ use libafl_bolts::{
 };
 use naga::{
     AddressSpace, ArraySize, AtomicFunction, Barrier, BinaryOperator, Binding, Block, BuiltIn,
-    Expression, Handle, ImageDimension, Literal, MathFunction, ScalarKind, Statement,
+    Expression, Handle, ImageDimension, Literal, MathFunction, Scalar, ScalarKind, Statement,
     StorageAccess, StructMember, Type, VectorSize,
 };
 use rand::{seq::IteratorRandom, Rng};
@@ -223,8 +223,8 @@ impl MathFuncMutator {
         MathFunction::ReverseBits,
         MathFunction::ExtractBits,
         MathFunction::InsertBits,
-        MathFunction::FindLsb,
-        MathFunction::FindMsb,
+        MathFunction::FirstTrailingBit,
+        MathFunction::FirstLeadingBit,
         MathFunction::Pack4x8snorm,
         MathFunction::Pack4x8unorm,
         MathFunction::Pack2x16snorm,
@@ -358,6 +358,11 @@ impl LiteralMutator {
             Literal::U32(_) => Literal::U32(r.random_u32()),
             Literal::I32(_) => Literal::I32(r.random_i32()),
             Literal::Bool(_) => Literal::Bool(r.random_bool()),
+            Literal::F16(v) => Literal::F16(*v),
+            Literal::U64(v) => Literal::U64(*v),
+            Literal::I64(v) => Literal::I64(*v),
+            Literal::AbstractInt(v) => Literal::AbstractInt(*v),
+            Literal::AbstractFloat(v) => Literal::AbstractFloat(*v),
         }
     }
 }
@@ -788,13 +793,18 @@ where
                     | Statement::Call { .. }
                     | Statement::WorkGroupUniformLoad { .. }
                     | Statement::RayQuery { .. }
+                    | Statement::MemoryBarrier(_)
+                    | Statement::ImageAtomic { .. }
+                    | Statement::SubgroupBallot { .. }
+                    | Statement::SubgroupCollectiveOperation { .. }
+                    | Statement::SubgroupGather { .. }
                     | Statement::Continue => None,
                     Statement::If { .. }
                     | Statement::Block(_)
                     | Statement::Switch { .. }
                     | Statement::Loop { .. }
                     | Statement::Return { .. }
-                    | Statement::Barrier(_)
+                    | Statement::ControlBarrier(_)
                     | Statement::Store { .. }
                     | Statement::ImageStore { .. }
                     | Statement::Atomic { .. } => Some(stmt),
@@ -862,6 +872,11 @@ where
                         | Statement::Call { .. }
                         | Statement::WorkGroupUniformLoad { .. }
                         | Statement::RayQuery { .. }
+                        | Statement::MemoryBarrier(_)
+                        | Statement::ImageAtomic { .. }
+                        | Statement::SubgroupBallot { .. }
+                        | Statement::SubgroupCollectiveOperation { .. }
+                        | Statement::SubgroupGather { .. }
                         | Statement::Return { value: None } => {
                             unreachable!()
                         }
@@ -902,7 +917,7 @@ where
                         Statement::Return { value } => {
                             *value = Some(choose_expr(state));
                         }
-                        Statement::Barrier(b) => {
+                        Statement::ControlBarrier(b) => {
                             *b = state
                                 .rand_mut()
                                 .choose([Barrier::STORAGE, Barrier::WORK_GROUP])
@@ -1122,14 +1137,10 @@ where
             .types
             .iter()
             .filter_map(|(handle, ir_type)| match ir_type.inner {
-                Ti::Scalar { kind: _, width: _ } => None,
-                Ti::AccelerationStructure => None,
-                Ti::RayQuery => None,
-                Ti::Vector {
-                    size: _,
-                    kind: _,
-                    width: _,
-                } => None,
+                Ti::Scalar(..) => None,
+                Ti::AccelerationStructure { .. } => None,
+                Ti::RayQuery { .. } => None,
+                Ti::Vector { .. } => None,
                 _ => Some(handle),
             })
             .collect();
@@ -1142,27 +1153,23 @@ where
 
         use naga::TypeInner as Ti;
         let new_inner = match ir_type.inner {
-            Ti::Scalar { kind: _, width: _ } => {
+            Ti::Scalar(..) => {
                 unreachable!();
             }
-            Ti::Vector {
-                size: _,
-                kind: _,
-                width: _,
-            } => {
+            Ti::Vector { .. } => {
                 unreachable!();
             }
             Ti::Matrix {
                 columns,
                 rows,
-                width,
+                scalar,
             } => match state.rand_mut().below_or_zero(3) {
                 0 => {
                     let columns = Self::random_vector_size(state.rand_mut());
                     Ti::Matrix {
                         columns,
                         rows,
-                        width,
+                        scalar,
                     }
                 }
                 1 => {
@@ -1170,7 +1177,7 @@ where
                     Ti::Matrix {
                         columns,
                         rows,
-                        width,
+                        scalar,
                     }
                 }
                 2 => {
@@ -1178,21 +1185,30 @@ where
                     Ti::Matrix {
                         columns,
                         rows,
-                        width,
+                        scalar: Scalar {
+                            kind: scalar.kind,
+                            width,
+                        },
                     }
                 }
                 _ => {
                     unreachable!()
                 }
             },
-            Ti::Atomic { kind, width } => match state.rand_mut().below_or_zero(2) {
+            Ti::Atomic(scalar) => match state.rand_mut().below_or_zero(2) {
                 0 => {
                     let kind = Self::random_scalar_kind(state.rand_mut());
-                    Ti::Atomic { kind, width }
+                    Ti::Atomic(Scalar {
+                        kind,
+                        width: scalar.width,
+                    })
                 }
                 1 => {
                     let width = state.rand_mut().random_u8();
-                    Ti::Atomic { kind, width }
+                    Ti::Atomic(Scalar {
+                        kind: scalar.kind,
+                        width,
+                    })
                 }
                 _ => {
                     unreachable!()
@@ -1213,8 +1229,7 @@ where
             },
             Ti::ValuePointer {
                 size,
-                kind,
-                width,
+                scalar,
                 space,
             } => match state.rand_mut().below_or_zero(4) {
                 0 => {
@@ -1229,8 +1244,7 @@ where
                     };
                     Ti::ValuePointer {
                         size,
-                        kind,
-                        width,
+                        scalar,
                         space,
                     }
                 }
@@ -1238,8 +1252,10 @@ where
                     let kind = Self::random_scalar_kind(state.rand_mut());
                     Ti::ValuePointer {
                         size,
-                        kind,
-                        width,
+                        scalar: Scalar {
+                            kind,
+                            width: scalar.width,
+                        },
                         space,
                     }
                 }
@@ -1247,8 +1263,10 @@ where
                     let width = state.rand_mut().random_u8();
                     Ti::ValuePointer {
                         size,
-                        kind,
-                        width,
+                        scalar: Scalar {
+                            kind: scalar.kind,
+                            width,
+                        },
                         space,
                     }
                 }
@@ -1256,8 +1274,7 @@ where
                     let space = Self::random_address_space(state.rand_mut());
                     Ti::ValuePointer {
                         size,
-                        kind,
-                        width,
+                        scalar,
                         space,
                     }
                 }
@@ -1305,7 +1322,7 @@ where
                             1 => Some(Binding::BuiltIn(Self::random_builtin(state.rand_mut()))),
                             2 => Some(Binding::Location {
                                 location: state.rand_mut().random_u32(),
-                                second_blend_source: state.rand_mut().random_bool(),
+                                blend_src: None,
                                 interpolation: None,
                                 sampling: None,
                             }),
@@ -1367,7 +1384,7 @@ where
                     unreachable!()
                 }
             },
-            Ti::AccelerationStructure | Ti::RayQuery => {
+            Ti::AccelerationStructure { .. } | Ti::RayQuery { .. } => {
                 unreachable!();
             }
         };

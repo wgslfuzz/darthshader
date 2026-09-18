@@ -58,7 +58,7 @@ impl FuncExt for Function {
                 Statement::Atomic {
                     pointer,
                     value,
-                    result,
+                    result: Some(result),
                     ..
                 } => {
                     target = *result;

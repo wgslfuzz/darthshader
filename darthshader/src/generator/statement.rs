@@ -130,20 +130,19 @@ impl StatementGenerator for SwitchGenerator {
         let filter = |_, ty: &TypeInner| {
             matches!(
                 ty,
-                TypeInner::Scalar {
+                TypeInner::Scalar(naga::Scalar {
                     kind: ScalarKind::Uint | ScalarKind::Sint,
                     ..
-                }
+                })
             )
         };
         let (selector, ty) = ctx.expr_matching(filter)?;
-
         let mut values = Vec::new();
         match ty {
-            TypeInner::Scalar {
+            TypeInner::Scalar(naga::Scalar {
                 kind: ScalarKind::Sint,
                 ..
-            } => {
+            }) => {
                 if adjacent_values {
                     let num_cases = num_cases as u64 as i32;
                     let first = ctx.rng.random_i32().saturating_add(num_cases) - num_cases;
@@ -153,10 +152,10 @@ impl StatementGenerator for SwitchGenerator {
                     values.extend((0..num_cases).map(|_| SwitchValue::I32(ctx.rng.random_i32())));
                 }
             }
-            TypeInner::Scalar {
+            TypeInner::Scalar(naga::Scalar {
                 kind: ScalarKind::Uint,
                 ..
-            } => {
+            }) => {
                 if adjacent_values {
                     let num_cases = num_cases as u32;
                     let first = ctx.rng.random_u32().saturating_add(num_cases) - num_cases;
@@ -192,15 +191,7 @@ impl StatementGenerator for SwitchGenerator {
 struct IfGenerator;
 impl StatementGenerator for IfGenerator {
     fn generate(ctx: &mut FunctionGenCtx, budget: u32) -> Option<(Statement, u32)> {
-        let filter = |_, ty: &TypeInner| {
-            matches!(
-                ty,
-                TypeInner::Scalar {
-                    kind: ScalarKind::Bool,
-                    ..
-                }
-            )
-        };
+        let filter = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar(naga::Scalar::BOOL));
 
         let Some((condition, _)) = ctx.expr_matching(filter) else {
             return None;
@@ -259,15 +250,7 @@ impl StatementGenerator for LoopGenerator {
             }
         }
 
-        let filter = |_, ty: &TypeInner| {
-            matches!(
-                ty,
-                TypeInner::Scalar {
-                    kind: ScalarKind::Bool,
-                    ..
-                }
-            )
-        };
+        let filter = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar(naga::Scalar::BOOL));
         let break_if = ctx.expr_matching(filter).map(|(handle, _)| handle);
         ctx.expr_scope.scope_available.truncate(marker);
         Some((
@@ -286,7 +269,7 @@ impl StatementGenerator for BarrierGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
         let barriers = [Barrier::STORAGE, Barrier::WORK_GROUP];
         let barrier = *ctx.rng.choose(&barriers).unwrap();
-        Some((Statement::Barrier(barrier), 1))
+        Some((Statement::ControlBarrier(barrier), 1))
     }
 }
 
@@ -333,13 +316,8 @@ struct StoreGenerator;
 impl StatementGenerator for StoreGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
         let filter = |_, ty: &TypeInner| match ty {
-            TypeInner::ValuePointer {
-                size: _,
-                space,
-                kind: _,
-                width: _,
-            }
-            | TypeInner::Pointer { space, .. } => match space {
+            TypeInner::ValuePointer { space, .. } | TypeInner::Pointer { space, .. } => match space
+            {
                 AddressSpace::Function | AddressSpace::Private => true,
                 AddressSpace::Storage { access } => access.contains(StorageAccess::STORE),
                 _ => false,
@@ -350,28 +328,26 @@ impl StatementGenerator for StoreGenerator {
         let (pointer, ty) = ctx.expr_matching(filter)?;
         let value = match *ty {
             TypeInner::Pointer { base, space: _ } => match ctx.module.types[base].inner {
-                TypeInner::Atomic { kind, width } => {
-                    let value_ty = TypeInner::Scalar { kind, width };
+                TypeInner::Atomic(scalar) => {
+                    let value_ty = TypeInner::Scalar(scalar);
                     ctx.expr_of_type(&value_ty)
                 }
                 ref other => ctx.expr_of_type(other),
             },
             TypeInner::ValuePointer {
                 size: Some(size),
-                kind,
-                width,
-                ..
+                scalar,
+                space: _,
             } => {
-                let value_ty = TypeInner::Vector { size, kind, width };
+                let value_ty = TypeInner::Vector { size, scalar };
                 ctx.expr_of_type(&value_ty)
             }
             TypeInner::ValuePointer {
                 size: None,
-                kind,
-                width,
-                ..
+                scalar,
+                space: _,
             } => {
-                let value_ty = TypeInner::Scalar { kind, width };
+                let value_ty = TypeInner::Scalar(scalar);
                 ctx.expr_of_type(&value_ty)
             }
             _ => unreachable!(),
@@ -389,10 +365,8 @@ impl StatementGenerator for WorkgroupLoadGenerator {
                 ..
             } => true,
             TypeInner::ValuePointer {
-                size: _,
                 space: AddressSpace::WorkGroup,
-                kind: _,
-                width: _,
+                ..
             } => true,
             _ => false,
         };
@@ -474,10 +448,10 @@ impl StatementGenerator for AtomicGenerator {
                 let inner = &ctx.module.types[*base].inner;
                 matches!(
                     inner,
-                    TypeInner::Atomic {
+                    TypeInner::Atomic(naga::Scalar {
                         kind: ScalarKind::Sint | ScalarKind::Uint,
                         width: 4
-                    }
+                    })
                 )
             }
             _ => false,
@@ -487,17 +461,12 @@ impl StatementGenerator for AtomicGenerator {
             unreachable!();
         };
         let inner = &ctx.module.types[*base].inner;
-        let TypeInner::Atomic { kind, width } = inner else {
+        let TypeInner::Atomic(scalar) = inner else {
             unreachable!();
         };
-        let value_ty = TypeInner::Scalar {
-            kind: *kind,
-            width: *width,
-        };
+        let value_ty = TypeInner::Scalar(*scalar);
         let value = ctx.expr_of_type(&value_ty)?;
 
-        // `AF::VALUES` omits `Exchange`, which carries a payload and so needs
-        // a generator of its own.
         let fun = *ctx.rng.choose(AF::VALUES).unwrap();
 
         let ty = ctx.module.types.insert(
@@ -522,7 +491,7 @@ impl StatementGenerator for AtomicGenerator {
                 pointer,
                 fun,
                 value,
-                result,
+                result: Some(result),
             },
             1,
         ))

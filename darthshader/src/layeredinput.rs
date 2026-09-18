@@ -81,8 +81,25 @@ impl IR {
         use naga::back::wgsl;
         self.text
             .get_or_init(|| {
+                // Validation is deliberately disabled here, and must stay
+                // explicit.
+                //
+                // Under naga 0.14 this code asked for `ValidationFlags::all()`,
+                // but 0.14 gated every flag constant behind a `validate`
+                // feature darthshader does not enable, so `all()` evaluated to
+                // zero and nothing was ever validated. That feature was removed
+                // in 0.19, so on naga 27 `all()` means 0x3f and this call site
+                // would silently flip from no validation to full.
+                //
+                // Enabling real validation is worth doing, but it is a project
+                // rather than a side effect of a version bump: it fails roughly
+                // half of what we currently emit, almost entirely on
+                // long-standing darthshader defects (expressions referenced
+                // without a preceding `Emit`, chiefly). Requesting `empty()`
+                // preserves the behaviour that was actually in effect, and says
+                // so out loud.
                 let info = naga::valid::Validator::new(
-                    naga::valid::ValidationFlags::all(),
+                    naga::valid::ValidationFlags::empty(),
                     naga::valid::Capabilities::all(),
                 )
                 .validate(self.get_module())
@@ -130,7 +147,7 @@ impl IR {
 
         let expand_emits = |block: &mut Block| {
             while let Some(idx) = block.iter().position(|stmt| match stmt {
-                Statement::Emit(range) => range.zero_based_index_range().len() != 1,
+                Statement::Emit(range) => range.index_range().len() != 1,
                 _ => false,
             }) {
                 let Statement::Emit(range) = &block[idx] else {
@@ -158,6 +175,10 @@ impl IR {
                         ScalarKind::Uint => 4,
                         ScalarKind::Float => 4,
                         ScalarKind::Bool => 1,
+                        // Abstract numerics cannot appear in a validated module, but this arm exists
+                        // so that an unexpected one degrades to a validation failure rather than a panic.
+                        // 8 bytes reflects their 64-bit precision.
+                        ScalarKind::AbstractInt | ScalarKind::AbstractFloat => 8,
                     };
                     *convert = Some(size);
                 }

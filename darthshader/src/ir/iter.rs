@@ -285,10 +285,14 @@ impl UsesExprIter for Expression {
             | Expression::Unary { expr, .. }
             | Expression::As { expr, .. } => smallvec![expr],
             Expression::ArrayLength(handle) => smallvec![handle],
-            Expression::RayQueryGetIntersection { query, .. } => smallvec![query],
+            Expression::RayQueryGetIntersection { query, .. }
+            | Expression::RayQueryVertexPositions { query, .. } => smallvec![query],
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
             | Expression::WorkGroupUniformLoadResult { .. }
+            | Expression::SubgroupBallotResult
+            | Expression::SubgroupOperationResult { .. }
+            | Expression::Override(_)
             | Expression::FunctionArgument(_)
             | Expression::GlobalVariable(_)
             | Expression::LocalVariable(_)
@@ -390,10 +394,14 @@ impl UsesExprIter for Expression {
             | Expression::Unary { expr, .. }
             | Expression::As { expr, .. } => smallvec![expr],
             Expression::ArrayLength(handle) => smallvec![handle],
-            Expression::RayQueryGetIntersection { query, .. } => smallvec![query],
+            Expression::RayQueryGetIntersection { query, .. }
+            | Expression::RayQueryVertexPositions { query, .. } => smallvec![query],
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
             | Expression::WorkGroupUniformLoadResult { .. }
+            | Expression::SubgroupBallotResult
+            | Expression::SubgroupOperationResult { .. }
+            | Expression::Override(_)
             | Expression::FunctionArgument(_)
             | Expression::GlobalVariable(_)
             | Expression::LocalVariable(_)
@@ -435,13 +443,51 @@ impl UsesExprIter for Statement {
                     AtomicFunction::Exchange {
                         compare: Some(compare),
                     },
-            } => smallvec![pointer, value, result, compare],
+            } => {
+                let mut v = smallvec![pointer, value, compare];
+                if let Some(result) = result {
+                    v.push(result);
+                }
+                v
+            }
             Statement::Atomic {
                 pointer,
                 value,
                 result,
                 ..
-            } => smallvec![pointer, value, result],
+            } => {
+                let mut v = smallvec![pointer, value];
+                if let Some(result) = result {
+                    v.push(result);
+                }
+                v
+            }
+            Statement::ImageAtomic {
+                image,
+                coordinate,
+                array_index,
+                value,
+                ..
+            } => {
+                let mut v = smallvec![image, coordinate, value];
+                if let Some(array_index) = array_index {
+                    v.push(array_index);
+                }
+                v
+            }
+            Statement::SubgroupBallot { result, predicate } => {
+                let mut v = smallvec![result];
+                if let Some(predicate) = predicate {
+                    v.push(predicate);
+                }
+                v
+            }
+            Statement::SubgroupGather {
+                argument, result, ..
+            }
+            | Statement::SubgroupCollectiveOperation {
+                argument, result, ..
+            } => smallvec![argument, result],
             Statement::WorkGroupUniformLoad { pointer, result } => smallvec![pointer, result],
             Statement::Call {
                 arguments, result, ..
@@ -458,7 +504,9 @@ impl UsesExprIter for Statement {
                     descriptor,
                 } => smallvec![query, acceleration_structure, descriptor],
                 naga::RayQueryFunction::Proceed { result } => smallvec![query, result],
-                naga::RayQueryFunction::Terminate => smallvec![],
+                naga::RayQueryFunction::GenerateIntersection { hit_t } => smallvec![query, hit_t],
+                naga::RayQueryFunction::ConfirmIntersection => smallvec![query],
+                naga::RayQueryFunction::Terminate => smallvec![query],
             },
             Statement::Loop { break_if: None, .. }
             | Statement::Return { value: None }
@@ -466,7 +514,8 @@ impl UsesExprIter for Statement {
             | Statement::Break
             | Statement::Continue
             | Statement::Kill
-            | Statement::Barrier(_) => {
+            | Statement::ControlBarrier(_)
+            | Statement::MemoryBarrier(_) => {
                 smallvec![]
             }
         };
@@ -503,13 +552,51 @@ impl UsesExprIter for Statement {
                     AtomicFunction::Exchange {
                         compare: Some(compare),
                     },
-            } => smallvec![pointer, value, result, compare],
+            } => {
+                let mut v = smallvec![pointer, value, compare];
+                if let Some(result) = result {
+                    v.push(result);
+                }
+                v
+            }
             Statement::Atomic {
                 pointer,
                 value,
                 result,
                 ..
-            } => smallvec![pointer, value, result],
+            } => {
+                let mut v = smallvec![pointer, value];
+                if let Some(result) = result {
+                    v.push(result);
+                }
+                v
+            }
+            Statement::ImageAtomic {
+                image,
+                coordinate,
+                array_index,
+                value,
+                ..
+            } => {
+                let mut v = smallvec![image, coordinate, value];
+                if let Some(array_index) = array_index {
+                    v.push(array_index);
+                }
+                v
+            }
+            Statement::SubgroupBallot { result, predicate } => {
+                let mut v = smallvec![result];
+                if let Some(predicate) = predicate {
+                    v.push(predicate);
+                }
+                v
+            }
+            Statement::SubgroupGather {
+                argument, result, ..
+            }
+            | Statement::SubgroupCollectiveOperation {
+                argument, result, ..
+            } => smallvec![argument, result],
             Statement::WorkGroupUniformLoad { pointer, result } => smallvec![pointer, result],
             Statement::Call {
                 arguments, result, ..
@@ -526,7 +613,9 @@ impl UsesExprIter for Statement {
                     descriptor,
                 } => smallvec![query, acceleration_structure, descriptor],
                 naga::RayQueryFunction::Proceed { result } => smallvec![query, result],
-                naga::RayQueryFunction::Terminate => smallvec![],
+                naga::RayQueryFunction::GenerateIntersection { hit_t } => smallvec![query, hit_t],
+                naga::RayQueryFunction::ConfirmIntersection => smallvec![query],
+                naga::RayQueryFunction::Terminate => smallvec![query],
             },
             Statement::Loop { break_if: None, .. }
             | Statement::Return { value: None }
@@ -534,7 +623,8 @@ impl UsesExprIter for Statement {
             | Statement::Break
             | Statement::Continue
             | Statement::Kill
-            | Statement::Barrier(_) => {
+            | Statement::ControlBarrier(_)
+            | Statement::MemoryBarrier(_) => {
                 smallvec![]
             }
         };
