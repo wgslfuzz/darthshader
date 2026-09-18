@@ -275,13 +275,15 @@ impl ExpressionGenerator for BinaryGenerator {
 
                 let (left, ty) = ctx.expr_matching(filter)?;
                 let (right, _) = match ty {
-                    TI::Scalar { .. } => {
+                    TI::Scalar { kind: _, width: _ } => {
                         let filter =
                             |_, ty: &TypeInner| matches!(ty, TI::Scalar { kind: S::Uint, .. });
                         ctx.expr_matching(filter)?
                     }
                     TI::Vector {
-                        size: left_size, ..
+                        size: left_size,
+                        kind: _,
+                        width: _,
                     } => {
                         let filter = |_, ty: &TypeInner| match ty {
                             TI::Vector {
@@ -307,7 +309,11 @@ impl ExpressionGenerator for BinaryGenerator {
                         } | TI::Vector {
                             kind: S::Sint | S::Uint | S::Float,
                             ..
-                        } | TI::Matrix { .. }
+                        } | TI::Matrix {
+                            columns: _,
+                            rows: _,
+                            width: _,
+                        }
                     )
                 };
                 let (left, ty) = ctx.expr_matching(filter)?;
@@ -356,9 +362,17 @@ impl ExpressionGenerator for BinaryGenerator {
                             TI::Scalar { kind: S::Bool, .. } | TI::Vector { kind: S::Bool, .. }
                         )
                     },
-                    Bi::Equal | Bi::NotEqual => {
-                        |_, ty: &TypeInner| matches!(ty, TI::Scalar { .. } | TI::Vector { .. })
-                    }
+                    Bi::Equal | Bi::NotEqual => |_, ty: &TypeInner| {
+                        matches!(
+                            ty,
+                            TI::Scalar { kind: _, width: _ }
+                                | TI::Vector {
+                                    size: _,
+                                    kind: _,
+                                    width: _,
+                                }
+                        )
+                    },
                     Bi::Less | Bi::LessEqual | Bi::Greater | Bi::GreaterEqual => {
                         |_, ty: &TypeInner| {
                             matches!(
@@ -443,7 +457,7 @@ impl SplatGenerator {
         use naga::VectorSize as Vs;
         let size = *rng.choose(Vs::VALUES).unwrap();
 
-        let is_scalar = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar { .. });
+        let is_scalar = |_, ty: &TypeInner| matches!(ty, TypeInner::Scalar { kind: _, width: _ });
         let (value, _) = scope.matching(is_scalar, types)?;
         Some(Expression::Splat { value, size })
     }
@@ -466,9 +480,23 @@ impl ExpressionGenerator for SwizzleGenerator {
     fn generate(ctx: &mut FunctionGenCtx) -> Option<Expression> {
         use naga::SwizzleComponent as Sc;
         use naga::VectorSize as Vs;
-        let is_vector = |_, ty: &TypeInner| matches!(ty, TypeInner::Vector { .. });
+        let is_vector = |_, ty: &TypeInner| {
+            matches!(
+                ty,
+                TypeInner::Vector {
+                    size: _,
+                    kind: _,
+                    width: _,
+                }
+            )
+        };
         let (vector, ty) = ctx.expr_matching(is_vector)?;
-        let TypeInner::Vector { size: src_size, .. } = ty else {
+        let TypeInner::Vector {
+            size: src_size,
+            kind: _,
+            width: _,
+        } = ty
+        else {
             unreachable!();
         };
         let components = match src_size {
@@ -516,7 +544,15 @@ impl ExpressionGenerator for SelectGenerator {
                 ..
             } => {
                 let is_scalar_or_vec = |_, ty: &TypeInner| {
-                    matches!(ty, TypeInner::Scalar { .. } | TypeInner::Vector { .. })
+                    matches!(
+                        ty,
+                        TypeInner::Scalar { kind: _, width: _ }
+                            | TypeInner::Vector {
+                                size: _,
+                                kind: _,
+                                width: _,
+                            }
+                    )
                 };
                 ctx.expr_matching(is_scalar_or_vec).unwrap()
             }
@@ -527,7 +563,9 @@ impl ExpressionGenerator for SelectGenerator {
             } => {
                 let filter = |_, ty: &TypeInner| match ty {
                     TypeInner::Vector {
-                        size: inner_size, ..
+                        size: inner_size,
+                        kind: _,
+                        width: _,
                     } => inner_size == size,
                     _ => false,
                 };
@@ -759,7 +797,7 @@ impl ExpressionGenerator for MathGenerator {
                         TI::Vector {
                             size: VectorSize::Tri,
                             kind: S::Float,
-                            ..
+                            width: _,
                         }
                     )
                 };
@@ -775,7 +813,11 @@ impl ExpressionGenerator for MathGenerator {
             }
             Mf::Determinant => {
                 let filter = |_, ty: &TypeInner| match ty {
-                    TI::Matrix { columns, rows, .. } => columns == rows,
+                    TI::Matrix {
+                        columns,
+                        rows,
+                        width: _,
+                    } => columns == rows,
                     _ => false,
                 };
                 let (arg, _) = ctx.expr_matching(filter)?;
@@ -1096,7 +1138,16 @@ impl ExpressionGenerator for MathGenerator {
                 }
             }
             Mf::Transpose => {
-                let filter = |_, ty: &TypeInner| matches!(ty, TI::Matrix { .. });
+                let filter = |_, ty: &TypeInner| {
+                    matches!(
+                        ty,
+                        TI::Matrix {
+                            columns: _,
+                            rows: _,
+                            width: _,
+                        }
+                    )
+                };
                 let (arg, _) = ctx.expr_matching(filter)?;
                 Expression::Math {
                     fun,
@@ -1167,9 +1218,15 @@ impl ComposeGenerator {
         let filter = |(_, ty): &(_, &Type)| {
             matches!(
                 ty.inner,
-                TI::Vector { .. }
-                    | TI::Matrix { .. }
-                    | TI::Struct { .. }
+                TI::Vector {
+                    size: _,
+                    kind: _,
+                    width: _,
+                } | TI::Matrix {
+                    columns: _,
+                    rows: _,
+                    width: _,
+                } | TI::Struct { .. }
                     | TI::Array {
                         size: ArraySize::Constant(..),
                         ..
@@ -1202,8 +1259,12 @@ impl ComposeGenerator {
                 while remaining > 0 {
                     let (expr, ty) = scope.matching(|_, ty| filter(ty, remaining), types)?;
                     let cur_size = match ty {
-                        TI::Scalar { .. } => 1,
-                        TI::Vector { size, .. } => *size as u32,
+                        TI::Scalar { kind: _, width: _ } => 1,
+                        TI::Vector {
+                            size,
+                            kind: _,
+                            width: _,
+                        } => *size as u32,
                         _ => unreachable!(),
                     };
                     remaining -= cur_size;
@@ -1278,11 +1339,22 @@ impl ExpressionGenerator for AccessIndexGenerator {
             top_level: bool,
         ) -> Result<u32, ()> {
             let limit = match *ty {
-                TI::Vector { size, .. }
+                TI::Vector {
+                    size,
+                    kind: _,
+                    width: _,
+                }
                 | TI::ValuePointer {
-                    size: Some(size), ..
+                    size: Some(size),
+                    space: _,
+                    kind: _,
+                    width: _,
                 } => size as u32,
-                TI::Matrix { columns, .. } => columns as u32,
+                TI::Matrix {
+                    columns,
+                    rows: _,
+                    width: _,
+                } => columns as u32,
                 TI::Array {
                     size: ArraySize::Constant(len),
                     ..
@@ -1318,10 +1390,24 @@ impl ExpressionGenerator for AccessGenerator {
 
         let (base, ty) = ctx.expr_matching(filter)?;
         let dynamic_indexing_restricted = match ty {
-            TI::Matrix { .. } | TI::Array { .. } => true,
-            TI::Vector { .. }
+            TI::Matrix {
+                columns: _,
+                rows: _,
+                width: _,
+            }
+            | TI::Array { .. } => true,
+            TI::Vector {
+                size: _,
+                kind: _,
+                width: _,
+            }
             | TI::Pointer { .. }
-            | TI::ValuePointer { size: Some(_), .. }
+            | TI::ValuePointer {
+                size: Some(_),
+                space: _,
+                kind: _,
+                width: _,
+            }
             | TI::BindingArray { .. } => false,
             _ => unreachable!(),
         };
@@ -1468,7 +1554,13 @@ impl ExpressionGenerator for LoadGenerator {
         let filter = |_, ty: &TypeInner| {
             matches!(
                 ty,
-                TypeInner::Pointer { .. } | TypeInner::ValuePointer { .. }
+                TypeInner::Pointer { .. }
+                    | TypeInner::ValuePointer {
+                        size: _,
+                        space: _,
+                        kind: _,
+                        width: _,
+                    }
             )
         };
 

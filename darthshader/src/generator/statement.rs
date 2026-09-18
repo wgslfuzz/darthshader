@@ -333,8 +333,13 @@ struct StoreGenerator;
 impl StatementGenerator for StoreGenerator {
     fn generate(ctx: &mut FunctionGenCtx, _: u32) -> Option<(Statement, u32)> {
         let filter = |_, ty: &TypeInner| match ty {
-            TypeInner::ValuePointer { space, .. } | TypeInner::Pointer { space, .. } => match space
-            {
+            TypeInner::ValuePointer {
+                size: _,
+                space,
+                kind: _,
+                width: _,
+            }
+            | TypeInner::Pointer { space, .. } => match space {
                 AddressSpace::Function | AddressSpace::Private => true,
                 AddressSpace::Storage { access } => access.contains(StorageAccess::STORE),
                 _ => false,
@@ -384,8 +389,10 @@ impl StatementGenerator for WorkgroupLoadGenerator {
                 ..
             } => true,
             TypeInner::ValuePointer {
+                size: _,
                 space: AddressSpace::WorkGroup,
-                ..
+                kind: _,
+                width: _,
             } => true,
             _ => false,
         };

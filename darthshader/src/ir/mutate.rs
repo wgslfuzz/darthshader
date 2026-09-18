@@ -1122,10 +1122,14 @@ where
             .types
             .iter()
             .filter_map(|(handle, ir_type)| match ir_type.inner {
-                Ti::Scalar { .. } => None,
-                Ti::AccelerationStructure { .. } => None,
-                Ti::RayQuery { .. } => None,
-                Ti::Vector { .. } => None,
+                Ti::Scalar { kind: _, width: _ } => None,
+                Ti::AccelerationStructure => None,
+                Ti::RayQuery => None,
+                Ti::Vector {
+                    size: _,
+                    kind: _,
+                    width: _,
+                } => None,
                 _ => Some(handle),
             })
             .collect();
@@ -1138,10 +1142,14 @@ where
 
         use naga::TypeInner as Ti;
         let new_inner = match ir_type.inner {
-            Ti::Scalar { .. } => {
+            Ti::Scalar { kind: _, width: _ } => {
                 unreachable!();
             }
-            Ti::Vector { .. } => {
+            Ti::Vector {
+                size: _,
+                kind: _,
+                width: _,
+            } => {
                 unreachable!();
             }
             Ti::Matrix {
