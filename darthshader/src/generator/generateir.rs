@@ -438,8 +438,18 @@ impl<'a> GlobalGenCtx<'a> {
         };
 
         let filter = |handle, ty: &TypeInner, last: bool| match ty {
-            TypeInner::Scalar { .. } | TypeInner::Vector { .. } | TypeInner::Matrix { .. } => true,
-            TypeInner::Atomic { .. } => !require_constructible,
+            TypeInner::Scalar { kind: _, width: _ }
+            | TypeInner::Vector {
+                size: _,
+                kind: _,
+                width: _,
+            }
+            | TypeInner::Matrix {
+                columns: _,
+                rows: _,
+                width: _,
+            } => true,
+            TypeInner::Atomic { kind: _, width: _ } => !require_constructible,
             TypeInner::Array { .. } => {
                 let mut required_flags = TypeFlags::empty();
                 if require_constructible {
@@ -638,7 +648,7 @@ impl<'a> GlobalGenCtx<'a> {
 
         let filter = |handle, inner: &TypeInner| {
             let type_flags: TypeFlags = info[handle];
-            if matches!(inner, TypeInner::Atomic { .. })
+            if matches!(inner, TypeInner::Atomic { kind: _, width: _ })
                 && matches!(
                     space,
                     AddressSpace::Storage {
